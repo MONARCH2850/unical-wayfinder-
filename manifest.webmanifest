@@ -1,0 +1,11 @@
+{
+  "name": "UNICAL Wayfinder",
+  "short_name": "UNICAL Map",
+  "description": "Mobile campus navigation for the University of Calabar.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#113b35",
+  "orientation": "any",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
