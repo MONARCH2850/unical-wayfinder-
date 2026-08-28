@@ -26,7 +26,7 @@
           <div class="brand-mark">U</div>
           <div><p class="kicker">Campus navigation</p><h1>UNICAL<br /><span>Wayfinder</span></h1></div>
         </div>
-        <div class="status-pill"><span class="status-dot"></span><span id="statusText">OpenStreetMap live map</span><button id="installButton" class="install-button" hidden>Install</button></div>
+        <div class="status-pill"><span class="status-dot"></span><span id="statusText">Google Maps live map</span><button id="installButton" class="install-button" hidden>Install</button></div>
 
         <section class="search-section">
           <label for="destination">Where are you going?</label>
@@ -37,7 +37,7 @@
         <section class="quick-section">
           <div class="section-heading"><span>Quick access</span><span class="mono" id="placeCount">00 PLACES</span></div>
           <div id="placeList" class="place-list"></div>
-          <button id="addLocationButton" class="add-location-button"><span>＋</span> Add this place</button>
+          <button id="addLocationButton" class="add-location-button"><span>📍</span> Add Spot Where I Stand</button>
         </section>
 
         <section class="route-panel" id="routePanel" hidden>
@@ -46,13 +46,14 @@
           <button id="startRoute" class="primary-button">Start navigation <span>→</span></button>
         </section>
 
-        <div class="sidebar-footer"><span>DATA LAYER</span><strong>OSM / UNICAL overlay</strong><small>Pathways shown are based on available OpenStreetMap coverage and local overlay data.</small></div>
+        <div class="sidebar-footer"><span>DATA LAYER</span><strong>Google Maps / UNICAL overlay</strong><small>Pathways shown are based on local campus overlay data.</small></div>
       </aside>
       <section class="map-stage">
         <div id="map" aria-label="Interactive map of University of Calabar"></div>
         <header class="map-toolbar"><div><span class="map-label">UNIVERSITY OF CALABAR</span><span class="map-coords" id="coordinates">5.0360° N · 8.3360° E</span></div><div class="toolbar-actions"><button class="icon-button" id="locateButton" title="Use my location">◎</button><button class="icon-button" id="arButton" title="Open orientation mode">⌁</button></div></header>
         <div class="map-legend"><div class="legend-title">PATHWAYS</div><div><i class="line-swatch main-line"></i>Main campus route</div><div><i class="line-swatch quiet-line"></i>Pedestrian path</div><div><i class="pin-swatch"></i>Places</div></div>
         <div class="map-controls"><button class="round-control" id="zoomIn">+</button><button class="round-control" id="zoomOut">−</button></div>
+        <button id="mobileAddLocationButton" class="mobile-add-location" type="button"><span>📍</span> Add Spot Where I Stand</button>
         <div class="orientation-panel" id="orientationPanel" hidden><button id="closeAr" class="close-button">×</button><span class="kicker">ORIENTATION MODE</span><div class="compass"><div class="compass-ring"><span class="north">N</span><span class="east">E</span><span class="south">S</span><span class="west">W</span><div class="compass-needle"></div></div></div><strong id="headingValue">Point your phone toward campus</strong><small id="orientationStatus">Device orientation will appear here when available.</small><button id="enableOrientation" class="primary-button">Enable device heading</button></div>
         <div class="location-toast" id="locationToast" hidden></div>
       </section>
@@ -66,8 +67,10 @@
         <label for="locationName">Place name</label>
         <input id="locationName" required maxlength="60" placeholder="e.g. New lecture hall" />
         <label for="locationType">Category</label>
-        <select id="locationType"><option>Building</option><option>Hostel</option><option>Lecture room</option><option>Landmark</option><option>Church</option><option>Mosque</option><option>Other</option></select>
-        <button class="primary-button" type="submit">Save place <span>→</span></button>
+        <select id="locationType"><option>Academic</option><option>Hostel</option><option>Services</option><option>Administrative</option></select>
+        <label for="locationDescription">Brief description <span>(optional)</span></label>
+        <textarea id="locationDescription" maxlength="160" placeholder="What should visitors know?"></textarea>
+        <button class="primary-button" type="submit">Save Location to Campus Map <span>→</span></button>
       </form>
     </dialog>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
