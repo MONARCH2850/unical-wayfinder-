@@ -25,7 +25,56 @@ const unicalCampusOnlyBounds = L.latLngBounds(
 );
 let installPrompt;
 let places = [];
-localStorage.removeItem('unical-saved-places');
+const SAVED_PLACES_KEY = 'unical_places';
+function getStoredPlaces() {
+  try {
+    const stored = localStorage.getItem(SAVED_PLACES_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+function persistPlaces() {
+  localStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(places.map((place) => ({
+    name: place.name,
+    lat: Number(place.coords[0]),
+    lng: Number(place.coords[1])
+  }))));
+}
+function buildSavedPlace(name, lat, lng, type = 'Saved • custom', description = '') {
+  return {
+    name,
+    type,
+    description,
+    coords: [Number(lat), Number(lng)]
+  };
+}
+function addPlaceMarker(place) {
+  place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, {
+    direction: 'top',
+    offset: [0, -8]
+  });
+}
+function renderSavedPlacesFromStorage() {
+  const saved = getStoredPlaces();
+  const placeListEl = document.getElementById('placeList');
+  if (!placeListEl) return;
+
+  places = [];
+  placeListEl.innerHTML = '';
+  saved.forEach((entry) => {
+    const place = buildSavedPlace(entry.name, entry.lat, entry.lng, 'Saved • custom', '');
+    places.push(place);
+    addPlaceMarker(place);
+    addPlaceButton(place);
+  });
+
+  if (!places.length) renderEmptyPlaceState();
+  document.getElementById('placeCount').textContent = `${String(document.querySelectorAll('.place-item').length).padStart(2, '0')} PLACES`;
+}
+document.addEventListener('DOMContentLoaded', renderSavedPlacesFromStorage);
 let currentCoords;
 let selectedPlace;
 const map = L.map('map', {
@@ -111,11 +160,33 @@ let pendingCoords;
 function openLocationDialog(coords) { pendingCoords = coords; document.getElementById('locationCoordinates').textContent = `${coords[0].toFixed(5)}° N · ${coords[1].toFixed(5)}° E`; locationDialog.showModal(); }
 function addLocationAtCurrentGPS() { const btn = document.getElementById('add-spot-btn'); const originalText = btn.innerHTML; btn.innerHTML = '<span>⏳</span> Acquiring GPS Location...'; btn.disabled = true; triggerVibration('tap'); speakCue('Acquiring GPS location'); announceForA11y('Acquiring your GPS location'); if (!navigator.geolocation) { const errMsg = 'Geolocation is not supported by this browser.'; alert(errMsg); triggerVibration('error'); speakCue(errMsg); announceForA11y(errMsg); btn.innerHTML = originalText; btn.disabled = false; return; } navigator.geolocation.getCurrentPosition((position) => { const coords = [position.coords.latitude, position.coords.longitude]; btn.innerHTML = originalText; btn.disabled = false; if (!unicalCampusOnlyBounds.contains(coords)) { const errMsg = 'You are outside UNICAL campus. Please move to campus before adding a location.'; alert(errMsg); triggerVibration('error'); speakCue(errMsg); announceForA11y(errMsg); return; } triggerVibration('success'); speakCue('Location acquired. Opening form'); announceForA11y('GPS location acquired. Ready to save'); createGPSPopupForm(coords); }, (error) => { btn.innerHTML = originalText; btn.disabled = false; let errorMsg = 'Unable to get your location.'; if (error.code === error.PERMISSION_DENIED) { errorMsg = 'Location permission denied. Please enable location access in your browser settings.'; } else if (error.code === error.POSITION_UNAVAILABLE) { errorMsg = 'GPS signal not available. Please check that your device has GPS enabled and is in an area with clear sky.'; } else if (error.code === error.TIMEOUT) { errorMsg = 'Location request timed out. Please try again in an area with better GPS signal.'; } alert(errorMsg); triggerVibration('error'); speakCue(errorMsg); announceForA11y(errorMsg); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); }
 function createGPSPopupForm(coords) { const popupContent = '<div style="width:200px"><p style="margin:0 0 8px 0;font-size:12px;color:#666">Add this location</p><input type="text" id="popupLocName" placeholder="Location name" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;margin-bottom:8px;box-sizing:border-box" maxlength="60"><button id="popupSaveBtn" style="width:100%;padding:8px 12px;background:#173f38;color:#fff;border:0;border-radius:4px;cursor:pointer;font-weight:600">Save Spot</button></div>'; const popup = L.popup({ closeButton: true, autoClose: false }).setLatLng(coords).setContent(popupContent).openOn(map); popup.on('add', () => { document.getElementById('popupSaveBtn').addEventListener('click', () => savePopupLocation(coords)); document.getElementById('popupLocName').focus(); }); }
-async function savePopupLocation(coords) { const locName = document.getElementById('popupLocName')?.value.trim(); if (!locName) { alert('Please enter a location name.'); announceForA11y('Please enter a location name'); speakCue('Please enter a location name'); return; } const payload = { name: locName, category: 'Landmark', latitude: coords[0], longitude: coords[1] }; try { announceForA11y(`Saving location: ${locName}`); speakCue(`Saving location: ${locName}`); const response = await fetch('/api/add-location/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (!response.ok) throw new Error('save failed'); const responseText = await response.text(); const data = responseText ? JSON.parse(responseText) : {}; const savedLocation = data.location || data; const place = { name: savedLocation.name || payload.name, type: `${savedLocation.category || payload.category} · saved`, description: savedLocation.description || '', coords: [Number(savedLocation.latitude ?? payload.latitude), Number(savedLocation.longitude ?? payload.longitude)] }; places.push(place); place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, { direction: 'top', offset: [0, -8] }); addPlaceButton(place); map.closePopup(); triggerVibration('success'); const successMsg = `Location ${locName} saved to the campus map`; showToast(successMsg); announceForA11y(successMsg); speakCue(successMsg); } catch { triggerVibration('error'); const errMsg = 'Failed to save location. Please try again.'; alert(errMsg); announceForA11y(errMsg); speakCue(errMsg); } }
+function submitCapturedSpot({ name, lat, lng, type = 'Saved • custom', description = '' }) {
+  const normalizedName = name?.trim();
+  const parsedLat = Number(lat);
+  const parsedLng = Number(lng);
+  if (!normalizedName || Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+    return null;
+  }
+
+  const place = buildSavedPlace(normalizedName, parsedLat, parsedLng, type, description);
+  places.push(place);
+  persistPlaces();
+  addPlaceMarker(place);
+  addPlaceButton(place);
+  map.closePopup();
+  triggerVibration('success');
+
+  const successMsg = `Location ${normalizedName} saved to the campus map`;
+  showToast(successMsg);
+  announceForA11y(successMsg);
+  speakCue(successMsg);
+  return place;
+}
+async function savePopupLocation(coords) { const locName = document.getElementById('popupLocName')?.value.trim(); if (!locName) { alert('Please enter a location name.'); announceForA11y('Please enter a location name'); speakCue('Please enter a location name'); return; } try { announceForA11y(`Saving location: ${locName}`); speakCue(`Saving location: ${locName}`); const savedPlace = submitCapturedSpot({ name: locName, lat: coords[0], lng: coords[1], type: 'Landmark · saved', description: '' }); if (!savedPlace) { throw new Error('save failed'); } } catch { triggerVibration('error'); const errMsg = 'Failed to save location. Please try again.'; alert(errMsg); announceForA11y(errMsg); speakCue(errMsg); } }
 document.getElementById('add-spot-btn').addEventListener('click', addLocationAtCurrentGPS);
 document.getElementById('accessibility-toggle-btn').addEventListener('click', toggleAccessibilityMode);
 document.getElementById('closeLocationDialog').addEventListener('click', () => locationDialog.close());
-document.getElementById('locationForm').addEventListener('submit', async (event) => { event.preventDefault(); if (!pendingCoords) return showToast('Capture a location before saving.'); const locationDetails = { name: document.getElementById('locationName').value.trim(), category: document.getElementById('locationType').value, description: document.getElementById('locationDescription').value.trim(), latitude: pendingCoords[0], longitude: pendingCoords[1] }; if (!locationDetails.name) return; const saveButton = event.currentTarget.querySelector('button[type="submit"]'); saveButton.disabled = true; try { const response = await fetch('/api/add-location/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(locationDetails) }); if (!response.ok) throw new Error('save failed'); const responseText = await response.text(); const data = responseText ? JSON.parse(responseText) : {}; const savedLocation = data.location || data; const place = { name: savedLocation.name || locationDetails.name, type: `${savedLocation.category || locationDetails.category} · saved`, description: savedLocation.description || locationDetails.description, coords: [Number(savedLocation.latitude ?? locationDetails.latitude), Number(savedLocation.longitude ?? locationDetails.longitude)] }; places.push(place); place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, { direction: 'top', offset: [0, -8] }); addPlaceButton(place); locationDialog.close(); document.getElementById('locationForm').reset(); pendingCoords = null; selectPlace(place); showToast('Location saved to the campus map.'); } catch { showToast('Unable to save location. Check the campus server and try again.'); } finally { saveButton.disabled = false; } });
+document.getElementById('locationForm').addEventListener('submit', (event) => { event.preventDefault(); if (!pendingCoords) return showToast('Capture a location before saving.'); const locationDetails = { name: document.getElementById('locationName').value.trim(), category: document.getElementById('locationType').value, description: document.getElementById('locationDescription').value.trim(), latitude: pendingCoords[0], longitude: pendingCoords[1] }; if (!locationDetails.name) return; const saveButton = event.currentTarget.querySelector('button[type="submit"]'); saveButton.disabled = true; try { const place = submitCapturedSpot({ name: locationDetails.name, lat: locationDetails.latitude, lng: locationDetails.longitude, type: `${locationDetails.category} · saved`, description: locationDetails.description }); if (!place) throw new Error('save failed'); locationDialog.close(); document.getElementById('locationForm').reset(); pendingCoords = null; selectPlace(place); } catch { showToast('Unable to save location. Please try again.'); } finally { saveButton.disabled = false; } });
 function renderEmptyPlaceState() { if (places.length || placeList.querySelector('.empty-place-state')) return; const emptyState = document.createElement('p'); emptyState.className = 'empty-place-state'; emptyState.textContent = "No saved places yet. Tap 'Add Spot Where I Stand' to add current location."; placeList.appendChild(emptyState); }
 function addPlaceButton(place) { placeList.querySelector('.empty-place-state')?.remove(); const item = document.createElement('button'); item.className = 'place-item'; item.dataset.name = place.name; item.innerHTML = `<span class="place-pin">●</span><span><strong>${place.name}</strong><small>${place.type}</small></span>`; item.addEventListener('click', () => selectPlace(place)); placeList.appendChild(item); document.getElementById('placeCount').textContent = `${String(document.querySelectorAll('.place-item').length).padStart(2, '0')} PLACES`; }
 renderEmptyPlaceState();
