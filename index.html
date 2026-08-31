@@ -22,45 +22,50 @@
   <body>
     <main class="app-shell">
       <aside class="sidebar">
+        <div aria-live="polite" aria-atomic="true" id="a11yAnnounce" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div>
+        <div id="screen-reader-announcer" aria-live="polite" aria-atomic="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div>
         <div class="brand-row">
           <div class="brand-mark">U</div>
           <div><p class="kicker">Campus navigation</p><h1>UNICAL<br /><span>Wayfinder</span></h1></div>
         </div>
-        <div class="status-pill"><span class="status-dot"></span><span id="statusText">Google Maps live map</span><button id="installButton" class="install-button" hidden>Install</button></div>
+        <div class="status-pill"><span class="status-dot"></span><span id="statusText">Google Maps live map</span><button id="installButton" class="install-button" aria-label="Install UNICAL Wayfinder app" hidden>Install</button></div>
 
         <section class="search-section">
           <label for="destination">Where are you going?</label>
-          <div class="search-box"><span>⌕</span><input id="destination" placeholder="Search campus places..." autocomplete="off" /></div>
+          <div style="position:relative; top:15px; z-index:1000; display:flex; align-items:center; gap:8px; margin-bottom:20px;">
+            <button id="accessibility-toggle-btn" type="button" aria-label="Toggle Visually Impaired Voice & Vibration Mode" aria-pressed="false" style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border:none;border-radius:12px;background:#1b3d36;color:#fff;box-shadow:0 4px 10px rgba(0,0,0,.12);cursor:pointer;font-size:20px;font-weight:700;transition:all .2s ease;flex-shrink:0;">👁️‍🗨️</button>
+            <div class="search-box" style="flex:1; min-width:0;"><span>⌕</span><input id="destination" placeholder="Search campus places..." autocomplete="off" /></div>
+          </div>
           <div id="searchResults" class="search-results"></div>
         </section>
 
         <section class="quick-section">
           <div class="section-heading"><span>Quick access</span><span class="mono" id="placeCount">00 PLACES</span></div>
           <div id="placeList" class="place-list"></div>
-          <button id="addLocationButton" class="add-location-button"><span>📍</span> Add Spot Where I Stand</button>
+          <button id="add-spot-btn" class="add-location-button" aria-label="Add current location to map"><span>📍</span> Add Spot Where I Stand</button>
         </section>
 
         <section class="route-panel" id="routePanel" hidden>
-          <div class="section-heading"><span>Route preview</span><button id="clearRoute" class="text-button">Clear</button></div>
+          <div class="section-heading"><span>Route preview</span><button id="clearRoute" class="text-button" aria-label="Clear route">Clear</button></div>
           <div class="route-summary"><span class="route-icon">↗</span><div><strong id="routeTitle">Selected destination</strong><small id="routeMeta">Walking route · 12 min</small></div></div>
-          <button id="startRoute" class="primary-button">Start navigation <span>→</span></button>
+          <button id="startRoute" class="primary-button" aria-label="Start navigation to destination">Start navigation <span>→</span></button>
         </section>
 
         <div class="sidebar-footer"><span>DATA LAYER</span><strong>Google Maps / UNICAL overlay</strong><small>Pathways shown are based on local campus overlay data.</small></div>
       </aside>
       <section class="map-stage">
         <div id="map" aria-label="Interactive map of University of Calabar"></div>
-        <header class="map-toolbar"><div><span class="map-label">UNIVERSITY OF CALABAR</span><span class="map-coords" id="coordinates">5.0360° N · 8.3360° E</span></div><div class="toolbar-actions"><button class="icon-button" id="locateButton" title="Use my location">◎</button><button class="icon-button" id="arButton" title="Open orientation mode">⌁</button></div></header>
+        <header class="map-toolbar"><div><span class="map-label">UNIVERSITY OF CALABAR</span><span class="map-coords" id="coordinates">5.0360° N · 8.3360° E</span></div><div class="toolbar-actions"><button class="icon-button" id="locateButton" title="Use my location" aria-label="Recenter map on current location">◎</button><button class="icon-button" id="arButton" title="Open orientation mode" aria-label="Open orientation mode">⌁</button></div></header>
         <div class="map-legend"><div class="legend-title">PATHWAYS</div><div><i class="line-swatch main-line"></i>Main campus route</div><div><i class="line-swatch quiet-line"></i>Pedestrian path</div><div><i class="pin-swatch"></i>Places</div></div>
-        <div class="map-controls"><button class="round-control" id="zoomIn">+</button><button class="round-control" id="zoomOut">−</button></div>
-        <button id="mobileAddLocationButton" class="mobile-add-location" type="button"><span>📍</span> Add Spot Where I Stand</button>
-        <div class="orientation-panel" id="orientationPanel" hidden><button id="closeAr" class="close-button">×</button><span class="kicker">ORIENTATION MODE</span><div class="compass"><div class="compass-ring"><span class="north">N</span><span class="east">E</span><span class="south">S</span><span class="west">W</span><div class="compass-needle"></div></div></div><strong id="headingValue">Point your phone toward campus</strong><small id="orientationStatus">Device orientation will appear here when available.</small><button id="enableOrientation" class="primary-button">Enable device heading</button></div>
+        <div class="map-controls"><button class="round-control" id="zoomIn" aria-label="Zoom in on map">+</button><button class="round-control" id="zoomOut" aria-label="Zoom out on map">−</button></div>
+        <button id="add-spot-btn" class="mobile-add-location" type="button" aria-label="Add current location to map"><span>📍</span> Add Spot Where I Stand</button>
+        <div class="orientation-panel" id="orientationPanel" hidden><button id="closeAr" class="close-button" aria-label="Close orientation mode">×</button><span class="kicker">ORIENTATION MODE</span><div class="compass"><div class="compass-ring"><span class="north">N</span><span class="east">E</span><span class="south">S</span><span class="west">W</span><div class="compass-needle"></div></div></div><strong id="headingValue">Point your phone toward campus</strong><small id="orientationStatus">Device orientation will appear here when available.</small><button id="enableOrientation" class="primary-button" aria-label="Enable device heading">Enable device heading</button></div>
         <div class="location-toast" id="locationToast" hidden></div>
       </section>
     </main>
-    <dialog id="locationDialog" class="location-dialog">
+    <dialog id="locationDialog" class="location-dialog" aria-label="Save location dialog">
       <form id="locationForm" method="dialog">
-        <button type="button" id="closeLocationDialog" class="close-button">×</button>
+        <button type="button" id="closeLocationDialog" class="close-button" aria-label="Close dialog">×</button>
         <span class="kicker">SAVE A CAMPUS PLACE</span>
         <h2>Add this location</h2>
         <p id="locationCoordinates" class="dialog-coordinates">Waiting for your device location...</p>
