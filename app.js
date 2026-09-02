@@ -1,9 +1,20 @@
 const campus = [5.0363, 8.3362];
 let isAccessibilityModeActive = false;
 function announceToScreenReader(message) { const announcer = document.getElementById('screen-reader-announcer'); if (announcer) announcer.textContent = message; }
-function speakCue(text) { if (!isAccessibilityModeActive || !window.speechSynthesis) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.rate = 1; utterance.pitch = 1; window.speechSynthesis.speak(utterance); }
+function speakCue(text) { if (!window.speechSynthesis || (!isAccessibilityModeActive && !arState.active)) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.rate = 1; utterance.pitch = 1; window.speechSynthesis.speak(utterance); }
 function announceForA11y(text) { const announce = document.getElementById('a11yAnnounce'); if (announce) announce.textContent = text; announceToScreenReader(text); }
-function triggerVibration(type) { if (!isAccessibilityModeActive || !navigator.vibrate) return; let pattern; if (type === 'tap') pattern = 100; else if (type === 'success') pattern = [200, 100, 200]; else if (type === 'error') pattern = [400, 100, 400]; else pattern = 100; navigator.vibrate(pattern); }
+function triggerVibration(type) {
+  if (!navigator.vibrate) return;
+  let pattern;
+  if (type === 'tap') pattern = 100;
+  else if (type === 'success') pattern = [200, 100, 200];
+  else if (type === 'error') pattern = [400, 100, 400];
+  else if (type === 'arrival') pattern = [200, 80, 180, 80, 260];
+  else if (type === 'turn') pattern = [120, 40, 120];
+  else pattern = 100;
+
+  if (isAccessibilityModeActive || type === 'arrival' || type === 'turn') navigator.vibrate(pattern);
+}
 function toggleAccessibilityMode() {
   isAccessibilityModeActive = !isAccessibilityModeActive;
   const button = document.getElementById('accessibility-toggle-btn');
@@ -18,6 +29,184 @@ function toggleAccessibilityMode() {
   triggerVibration('tap');
   announceToScreenReader(message);
   speakCue(message);
+}
+const arState = {
+  active: false,
+  stream: null,
+  track: null,
+  lastHeading: 0,
+  lastAnnouncementDistance: Number.POSITIVE_INFINITY,
+  lastAnnouncementAt: 0,
+  fallbackMode: false
+};
+function isSecureForDeviceAPIs() {
+  return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
+function getCurrentTarget() {
+  if (selectedPlace) return selectedPlace;
+  if (window.UNICAL_ROUTE_TARGET) return window.UNICAL_ROUTE_TARGET;
+  return null;
+}
+function calculateDistanceMeters(start, end) {
+  if (!start || !end) return Number.POSITIVE_INFINITY;
+  const lat1 = start[0] * Math.PI / 180;
+  const lat2 = end[0] * Math.PI / 180;
+  const deltaLat = (end[0] - start[0]) * Math.PI / 180;
+  const deltaLng = (end[1] - start[1]) * Math.PI / 180;
+  const a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return 6371000 * c;
+}
+function calculateBearingDegrees(from, to) {
+  const lat1 = from[0] * Math.PI / 180;
+  const lat2 = to[0] * Math.PI / 180;
+  const dLng = (to[1] - from[1]) * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+function getDirectionalCue(distanceMeters, relativeAngle) {
+  if (distanceMeters < 12) return { text: 'You have arrived at your destination.', mode: 'arrival' };
+  if (relativeAngle < -40) return { text: 'Turn slightly left.', mode: 'turn' };
+  if (relativeAngle > 40) return { text: 'Turn slightly right.', mode: 'turn' };
+  if (relativeAngle < -90) return { text: 'Turn left toward the destination.', mode: 'turn' };
+  if (relativeAngle > 90) return { text: 'Turn right toward the destination.', mode: 'turn' };
+  return { text: 'Continue straight ahead.', mode: 'turn' };
+}
+function updateARTargetDisplay() {
+  const target = getCurrentTarget();
+  const nameEl = document.getElementById('arTargetName');
+  const distanceEl = document.getElementById('arTargetDistance');
+  if (!nameEl || !distanceEl) return;
+
+  if (!target) {
+    nameEl.textContent = 'Select a destination';
+    distanceEl.textContent = '0 m away';
+    return;
+  }
+
+  const origin = currentCoords || campus;
+  const distance = Math.round(calculateDistanceMeters(origin, target.coords));
+  nameEl.textContent = target.name;
+  distanceEl.textContent = `${distance} m away`;
+
+  if (!arState.active || !window.deviceorientation) return;
+
+  const heading = arState.lastHeading || 0;
+  const bearing = calculateBearingDegrees(origin, target.coords);
+  const relative = ((bearing - heading) + 540) % 360 - 180;
+  const arrow = document.getElementById('arDirectionArrow');
+  if (arrow) arrow.style.transform = `rotate(${relative}deg)`;
+
+  const cue = getDirectionalCue(distance, relative);
+  const now = Date.now();
+  if (distance < 30 && distance !== arState.lastAnnouncementDistance && now - arState.lastAnnouncementAt > 5000) {
+    arState.lastAnnouncementDistance = distance;
+    arState.lastAnnouncementAt = now;
+    if (cue.text) {
+      announceForA11y(cue.text);
+      speakCue(cue.text);
+      triggerVibration(cue.mode);
+    }
+  }
+}
+function exitWebARView() {
+  const video = document.getElementById('ar-video-feed');
+  const arContainer = document.getElementById('ar-view-container');
+  const mapContainer = document.getElementById('map');
+  if (arState.track) {
+    arState.track.stop();
+    arState.track = null;
+  }
+  if (arState.stream) {
+    arState.stream.getTracks().forEach((track) => track.stop());
+    arState.stream = null;
+  }
+  if (video) video.srcObject = null;
+  if (arContainer) arContainer.hidden = true;
+  if (mapContainer) mapContainer.style.display = 'block';
+  arState.active = false;
+  arState.lastAnnouncementDistance = Number.POSITIVE_INFINITY;
+}
+async function startWebARGuidance() {
+  const video = document.getElementById('ar-video-feed');
+  const arContainer = document.getElementById('ar-view-container');
+  const mapContainer = document.getElementById('map');
+
+  if (!isSecureForDeviceAPIs()) {
+    const message = 'Web-AR requires HTTPS or localhost. Switching back to the 2D map.';
+    showToast(message);
+    announceForA11y(message);
+    speakCue(message);
+    return;
+  }
+
+  const target = getCurrentTarget();
+  if (!target) {
+    const message = 'Choose a destination to begin camera guidance.';
+    showToast(message);
+    announceForA11y(message);
+    speakCue(message);
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const message = 'This browser does not support camera access. Returning to the 2D map.';
+    showToast(message);
+    announceForA11y(message);
+    speakCue(message);
+    return;
+  }
+
+  const requestCamera = async (constraints) => {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    arState.stream = stream;
+    arState.track = stream.getVideoTracks()[0];
+    if (video) {
+      video.srcObject = stream;
+      await video.play();
+    }
+    arState.active = true;
+    if (arContainer) arContainer.hidden = false;
+    if (mapContainer) mapContainer.style.display = 'none';
+    updateARTargetDisplay();
+    return true;
+  };
+
+  try {
+    await requestCamera({ video: { facingMode: { exact: 'environment' } } });
+    announceForA11y(`Camera guidance active for ${target.name}`);
+    speakCue(`Camera guidance to ${target.name}`);
+    window.addEventListener('deviceorientation', (event) => {
+      if (!arState.active) return;
+      const heading = typeof event.webkitCompassHeading === 'number'
+        ? event.webkitCompassHeading
+        : (event.alpha !== null && event.alpha !== undefined ? 360 - event.alpha : arState.lastHeading || 0);
+      arState.lastHeading = heading;
+      updateARTargetDisplay();
+    }, true);
+  } catch (environmentError) {
+    try {
+      await requestCamera({ video: { facingMode: 'user' } });
+      arState.fallbackMode = true;
+      announceForA11y('Environmental camera unavailable. Using the standard camera view instead.');
+      showToast('Rear camera unavailable. Standard camera view enabled.');
+    } catch (fallbackError) {
+      try {
+        await requestCamera({ video: true });
+        arState.fallbackMode = true;
+        announceForA11y('Camera fallback enabled. Returning to map view if camera access is denied.');
+        showToast('AR camera access unavailable. Switching to 2D map mode.');
+      } catch (error) {
+        const message = 'Web-AR camera was denied. Switching to 2D map mode.';
+        showToast(message);
+        announceForA11y(message);
+        speakCue(message);
+        exitWebARView();
+      }
+    }
+  }
 }
 const unicalCampusOnlyBounds = L.latLngBounds(
   L.latLng(4.9360, 8.3360),
@@ -147,7 +336,7 @@ function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; do
 places.forEach((place) => { addPlaceButton(place); });
 document.getElementById('placeCount').textContent = `${String(places.length).padStart(2, '0')} PLACES`;
 destinationInput.addEventListener('input', () => { const query = destinationInput.value.toLowerCase().trim(); searchResults.innerHTML = ''; if (!query) return; const matches = places.filter((place) => `${place.name} ${place.type}`.toLowerCase().includes(query)); if (!matches.length) { const result = document.createElement('div'); result.className = 'search-result search-empty'; result.textContent = 'No places found'; searchResults.appendChild(result); return; } matches.forEach((place) => { const result = document.createElement('button'); result.type = 'button'; result.className = 'search-result'; result.textContent = place.name; result.addEventListener('click', () => { destinationInput.value = place.name; searchResults.innerHTML = ''; selectPlace(place); }); searchResults.appendChild(result); }); });
-document.getElementById('clearRoute').addEventListener('click', () => { triggerVibration('tap'); routePanel.hidden = true; routeLayer.clearLayers(); document.querySelectorAll('.place-item').forEach((item) => item.classList.remove('active')); announceForA11y('Route cleared'); speakCue('Route cleared'); map.flyTo(campus, 16); selectedPlace = null; if (navigationWatchId !== null) { navigator.geolocation.clearWatch(navigationWatchId); navigationWatchId = null; } setNavigationButtonState(false); });
+document.getElementById('clearRoute').addEventListener('click', () => { triggerVibration('tap'); routePanel.hidden = true; routeLayer.clearLayers(); document.querySelectorAll('.place-item').forEach((item) => item.classList.remove('active')); announceForA11y('Route cleared'); speakCue('Route cleared'); map.flyTo(campus, 16); selectedPlace = null; if (navigationWatchId !== null) { navigator.geolocation.clearWatch(navigationWatchId); navigationWatchId = null; } setNavigationButtonState(false); exitWebARView(); });
 const startNavButton = document.getElementById('start-nav-btn') || document.getElementById('startRoute');
 function setNavigationButtonState(isTracking) {
   if (!startNavButton) return;
@@ -188,8 +377,22 @@ function startInAppNavigation(targetLat, targetLng) {
     if (statusText) statusText.textContent = 'In-app navigation active';
     if (selectedPlace) {
       const destination = [Number(targetLat), Number(targetLng)];
-      const distanceKm = Math.hypot(lat - destination[0], lng - destination[1]) * 111.32;
-      routeMeta.textContent = `Tracking route · ${Math.max(1, Math.round(distanceKm * 20))} min to destination`;
+      const distanceMeters = calculateDistanceMeters([lat, lng], destination);
+      const direction = calculateBearingDegrees([lat, lng], destination);
+      const heading = arState.lastHeading || 0;
+      const relative = ((direction - heading) + 540) % 360 - 180;
+      const cue = getDirectionalCue(distanceMeters, relative);
+      routeMeta.textContent = `Tracking route · ${Math.max(1, Math.round(distanceMeters / 35))} min to destination`;
+      if (distanceMeters < 18) {
+        announceForA11y('You have arrived at your destination.');
+        speakCue('You have arrived at your destination.');
+        triggerVibration('arrival');
+      } else if (cue.mode === 'turn' && Math.abs(relative) > 28) {
+        triggerVibration('turn');
+        announceForA11y(cue.text);
+        speakCue(cue.text);
+      }
+      updateARTargetDisplay();
     }
   };
 
@@ -260,7 +463,16 @@ function renderEmptyPlaceState() { if (places.length || placeList.querySelector(
 function addPlaceButton(place) { placeList.querySelector('.empty-place-state')?.remove(); const item = document.createElement('button'); item.className = 'place-item'; item.dataset.name = place.name; item.innerHTML = `<span class="place-pin">●</span><span><strong>${place.name}</strong><small>${place.type}</small></span>`; item.addEventListener('click', () => selectPlace(place)); placeList.appendChild(item); document.getElementById('placeCount').textContent = `${String(document.querySelectorAll('.place-item').length).padStart(2, '0')} PLACES`; }
 renderEmptyPlaceState();
 const orientationPanel = document.getElementById('orientationPanel'); const needle = document.querySelector('.compass-needle'); const headingValue = document.getElementById('headingValue'); const orientationStatus = document.getElementById('orientationStatus');
-document.getElementById('arButton').addEventListener('click', () => { orientationPanel.hidden = false; }); document.getElementById('closeAr').addEventListener('click', () => { orientationPanel.hidden = true; });
+document.getElementById('arButton').addEventListener('click', async () => {
+  orientationPanel.hidden = true;
+  if (arState.active) {
+    exitWebARView();
+    return;
+  }
+  await startWebARGuidance();
+});
+document.getElementById('closeAr').addEventListener('click', () => { orientationPanel.hidden = true; });
+document.getElementById('arCloseBtn').addEventListener('click', () => { exitWebARView(); });
 function handleOrientation(event) { const heading = event.webkitCompassHeading || (event.alpha ? 360 - event.alpha : 0); needle.style.transform = `rotate(${heading}deg)`; headingValue.textContent = `${Math.round(heading)}° heading`; orientationStatus.textContent = 'Turn slowly to align with your selected destination.'; }
 document.getElementById('enableOrientation').addEventListener('click', async () => { try { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') { const permission = await DeviceOrientationEvent.requestPermission(); if (permission !== 'granted') throw new Error('denied'); } window.addEventListener('deviceorientation', handleOrientation, true); orientationStatus.textContent = 'Move your device to calibrate the compass.'; } catch { orientationStatus.textContent = 'Orientation permission was unavailable. Try HTTPS on a mobile device.'; } });
 map.on('mousemove', (event) => { document.getElementById('coordinates').textContent = `${event.latlng.lat.toFixed(4)}° N · ${event.latlng.lng.toFixed(4)}° E`; });
