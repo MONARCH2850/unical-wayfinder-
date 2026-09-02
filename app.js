@@ -61,6 +61,7 @@ const arState = {
   lastAnnouncementAt: 0,
   fallbackMode: false
 };
+const obstacleDetection = new window.ObstacleDetection();
 function isSecureForDeviceAPIs() {
   return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 }
@@ -148,6 +149,7 @@ function exitWebARView() {
     arState.stream = null;
   }
   if (video) video.srcObject = null;
+  obstacleDetection.stop();
   if (arContainer) arContainer.hidden = true;
   if (mapContainer) mapContainer.style.display = 'block';
   arState.active = false;
@@ -194,6 +196,7 @@ async function startWebARGuidance() {
     arState.active = true;
     if (arContainer) arContainer.hidden = false;
     if (mapContainer) mapContainer.style.display = 'none';
+    obstacleDetection.start(video);
     updateARTargetDisplay();
     return true;
   };
