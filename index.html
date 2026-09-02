@@ -16,6 +16,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/three.js/build/ar.js"></script>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="mobile.css" />
   </head>
@@ -28,7 +30,7 @@
           <div class="brand-mark">U</div>
           <div><p class="kicker">Campus navigation</p><h1>UNICAL<br /><span>Wayfinder</span></h1></div>
         </div>
-        <div class="status-pill"><span class="status-dot"></span><span id="statusText">Google Maps live map</span><button id="installButton" class="install-button" aria-label="Install UNICAL Wayfinder app" hidden>Install</button></div>
+        <div class="status-pill"><span class="status-dot"></span><span id="statusText">OpenStreetMap live map</span><button id="installButton" class="install-button" aria-label="Install UNICAL Wayfinder app" hidden>Install</button></div>
 
         <section class="search-section">
           <label for="destination">Where are you going?</label>
@@ -37,6 +39,14 @@
             <div class="search-box" style="flex:1; min-width:0;"><span>⌕</span><input id="destination" placeholder="Search campus places..." autocomplete="off" /></div>
           </div>
           <div id="searchResults" class="search-results"></div>
+        </section>
+
+        <section class="accessibility-panel" aria-labelledby="accessibilityHeading">
+          <div class="section-heading"><span id="accessibilityHeading">ACCESSIBILITY</span><span class="mono">ROUTE SETTINGS</span></div>
+          <label class="toggle-row"><span><strong>Wheelchair routes</strong><small>Prefer ramps and gentle slopes</small></span><input id="wheelchairToggle" type="checkbox" role="switch" /><i aria-hidden="true"></i></label>
+          <label class="toggle-row"><span><strong>Step-free paths</strong><small>Exclude stairs and obstacles</small></span><input id="stepFreeToggle" type="checkbox" role="switch" /><i aria-hidden="true"></i></label>
+          <label class="toggle-row"><span><strong>Audio guidance</strong><small>Speak route and arrival cues</small></span><input id="audioToggle" type="checkbox" role="switch" /><i aria-hidden="true"></i></label>
+          <label class="toggle-row"><span><strong>Vibration alerts</strong><small>Haptic turn and arrival alerts</small></span><input id="vibrationToggle" type="checkbox" role="switch" /><i aria-hidden="true"></i></label>
         </section>
 
         <section class="quick-section">
@@ -58,6 +68,9 @@
 
         <div id="ar-view-container" class="ar-view-container" hidden>
           <video id="ar-video-feed" playsinline autoplay muted></video>
+          <a-scene embedded vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false" class="ar-scene" aria-hidden="true">
+            <a-entity id="arArrowEntity" position="0 -0.2 -2" rotation="0 0 0"><a-cone color="#d8e64e" radius-bottom="0.28" radius-top="0" height="0.65" rotation="90 0 0"></a-cone></a-entity>
+          </a-scene>
           <div class="ar-ui-layer">
             <div class="ar-top-bar">
               <span class="kicker">WEB-AR NAVIGATION</span>

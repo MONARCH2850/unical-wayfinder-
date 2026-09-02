@@ -1,7 +1,17 @@
 const campus = [5.0363, 8.3362];
 let isAccessibilityModeActive = false;
+const navigationPreferences = {
+  wheelchair: false,
+  stepFree: false,
+  audio: false,
+  vibration: false
+};
+try {
+  Object.assign(navigationPreferences, JSON.parse(localStorage.getItem('unical_navigation_preferences') || '{}'));
+} catch {
+}
 function announceToScreenReader(message) { const announcer = document.getElementById('screen-reader-announcer'); if (announcer) announcer.textContent = message; }
-function speakCue(text) { if (!window.speechSynthesis || (!isAccessibilityModeActive && !arState.active)) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.rate = 1; utterance.pitch = 1; window.speechSynthesis.speak(utterance); }
+function speakCue(text) { if (!window.speechSynthesis || (!navigationPreferences.audio && !isAccessibilityModeActive && !arState.active)) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.rate = 1; utterance.pitch = 1; window.speechSynthesis.speak(utterance); }
 function announceForA11y(text) { const announce = document.getElementById('a11yAnnounce'); if (announce) announce.textContent = text; announceToScreenReader(text); }
 function triggerVibration(type) {
   if (!navigator.vibrate) return;
@@ -13,7 +23,19 @@ function triggerVibration(type) {
   else if (type === 'turn') pattern = [120, 40, 120];
   else pattern = 100;
 
-  if (isAccessibilityModeActive || type === 'arrival' || type === 'turn') navigator.vibrate(pattern);
+  if (navigationPreferences.vibration || isAccessibilityModeActive || type === 'arrival' || type === 'turn') navigator.vibrate(pattern);
+}
+function setNavigationPreference(name, enabled) {
+  navigationPreferences[name] = enabled;
+  if (name === 'wheelchair') navigationPreferences.stepFree = enabled || navigationPreferences.stepFree;
+  if (name === 'stepFree') navigationPreferences.wheelchair = enabled || navigationPreferences.wheelchair;
+  renderPathways();
+  if (selectedPlace) {
+    routeLayer.clearLayers();
+    calculateRoute(selectedPlace);
+  }
+  localStorage.setItem('unical_navigation_preferences', JSON.stringify(navigationPreferences));
+  announceForA11y(`${name} ${enabled ? 'enabled' : 'disabled'}`);
 }
 function toggleAccessibilityMode() {
   isAccessibilityModeActive = !isAccessibilityModeActive;
@@ -98,6 +120,8 @@ function updateARTargetDisplay() {
   const relative = ((bearing - heading) + 540) % 360 - 180;
   const arrow = document.getElementById('arDirectionArrow');
   if (arrow) arrow.style.transform = `rotate(${relative}deg)`;
+  const arArrowEntity = document.getElementById('arArrowEntity');
+  if (arArrowEntity) arArrowEntity.setAttribute('rotation', `0 ${relative} 0`);
 
   const cue = getDirectionalCue(distance, relative);
   const now = Date.now();
@@ -280,8 +304,8 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').ca
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; document.getElementById('installButton').hidden = false; });
 document.getElementById('installButton').addEventListener('click', async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; document.getElementById('installButton').hidden = true; });
 window.addEventListener('appinstalled', () => { document.getElementById('installButton').hidden = true; });
-L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-  attribution: '&copy; Google Maps',
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
   bounds: unicalCampusOnlyBounds
 }).addTo(map);
 const unicalCampusPolygon = [
@@ -318,12 +342,20 @@ const routeLayer = L.layerGroup().addTo(map);
 const pinIcon = L.divIcon({ className: 'campus-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9] });
 places.forEach((place) => { place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, { direction: 'top', offset: [0, -8] }); });
 const pathways = [
-  { points: [[5.0347,8.3348],[5.0352,8.3360],[5.0355,8.3388],[5.0364,8.3393],[5.0392,8.3390]], className: 'main-path' },
-  { points: [[5.0347,8.3348],[5.0334,8.3370],[5.0325,8.3391]], className: 'quiet-path' },
-  { points: [[5.0364,8.3393],[5.0373,8.3375],[5.0382,8.3327]], className: 'main-path' },
-  { points: [[5.0352,8.3360],[5.0368,8.3351],[5.0380,8.3355],[5.0392,8.3390]], className: 'quiet-path' }
+  { points: [[5.0347,8.3348],[5.0352,8.3360],[5.0355,8.3388],[5.0364,8.3393],[5.0392,8.3390]], className: 'main-path', stepFree: true },
+  { points: [[5.0347,8.3348],[5.0334,8.3370],[5.0325,8.3391]], className: 'quiet-path', stepFree: false },
+  { points: [[5.0364,8.3393],[5.0373,8.3375],[5.0382,8.3327]], className: 'main-path', stepFree: true },
+  { points: [[5.0352,8.3360],[5.0368,8.3351],[5.0380,8.3355],[5.0392,8.3390]], className: 'quiet-path', stepFree: true }
 ];
-pathways.forEach((path) => L.polyline(path.points, { color: path.className === 'main-path' ? '#b5c83b' : '#78a090', weight: path.className === 'main-path' ? 5 : 3, opacity: .9, dashArray: path.className === 'quiet-path' ? '7 7' : null, lineCap: 'round' }).addTo(map));
+const pathwayLayer = L.layerGroup().addTo(map);
+function renderPathways() {
+  pathwayLayer.clearLayers();
+  pathways.forEach((path) => {
+    if (navigationPreferences.stepFree && !path.stepFree) return;
+    L.polyline(path.points, { color: path.stepFree ? '#55b779' : '#e47b56', weight: path.className === 'main-path' ? 5 : 3, opacity: .9, dashArray: path.className === 'quiet-path' ? '7 7' : null, lineCap: 'round' }).addTo(pathwayLayer);
+  });
+}
+renderPathways();
 const placeList = document.getElementById('placeList');
 const routePanel = document.getElementById('routePanel');
 const destinationInput = document.getElementById('destination');
@@ -331,6 +363,11 @@ const searchResults = document.getElementById('searchResults');
 const routeTitle = document.getElementById('routeTitle');
 const routeMeta = document.getElementById('routeMeta');
 const toast = document.getElementById('locationToast');
+['wheelchair', 'stepFree', 'audio', 'vibration'].forEach((name) => {
+  const input = document.getElementById(`${name}Toggle`);
+  if (input) input.checked = navigationPreferences[name];
+  input?.addEventListener('change', () => setNavigationPreference(name, input.checked));
+});
 const showToast = (message) => { toast.textContent = message; toast.hidden = false; window.setTimeout(() => { toast.hidden = true; }, 3500); };
 function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; document.querySelectorAll('.place-item').forEach((item) => item.classList.toggle('active', item.dataset.name === place.name)); routeTitle.textContent = place.name; routeMeta.textContent = `${place.type.split(' · ')[0]} · calculating walking route...`; routePanel.hidden = false; routeLayer.clearLayers(); announceForA11y(`Selected destination: ${place.name}`); speakCue(`Route to ${place.name}`); map.flyTo(place.coords, 17, { duration: .7 }); calculateRoute(place); }
 places.forEach((place) => { addPlaceButton(place); });
@@ -424,7 +461,34 @@ let userMarker;
 function updateCurrentLocation(position, centerMap = true) { currentCoords = [position.coords.latitude, position.coords.longitude]; const coordinateLabel = document.getElementById('locationCoordinates'); if (userMarker) userMarker.setLatLng(currentCoords); else userMarker = L.marker(currentCoords, { icon: L.divIcon({ className: 'user-location-marker', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] }) }).addTo(map).bindTooltip('You are here'); if (centerMap) map.flyTo(currentCoords, 17); document.getElementById('statusText').textContent = 'Live location enabled'; if (coordinateLabel) coordinateLabel.textContent = `${currentCoords[0].toFixed(5)}° N · ${currentCoords[1].toFixed(5)}° E`; }
 function requestLocation(centerMap = true) { if (!navigator.geolocation) return showToast('Location is not supported by this browser.'); announceForA11y('Requesting your location'); showToast('Requesting your location...'); navigator.geolocation.getCurrentPosition((position) => { updateCurrentLocation(position, centerMap); triggerVibration('success'); announceForA11y('Location found'); showToast('Your location is shown on the map.'); }, () => { triggerVibration('error'); announceForA11y('Location permission denied'); showToast('Location permission was not granted.'); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); }
 document.getElementById('locateButton').addEventListener('click', () => { triggerVibration('tap'); requestLocation(); });
-async function calculateRoute(place) { const origin = currentCoords || campus; const url = `https://router.project-osrm.org/route/v1/foot/${origin[1]},${origin[0]};${place.coords[1]},${place.coords[0]}?overview=full&geometries=geojson`; try { const response = await fetch(url); if (!response.ok) throw new Error('route unavailable'); const data = await response.json(); const route = data.routes[0]; const routePoints = route.geometry.coordinates.map(([longitude, latitude]) => [latitude, longitude]); L.polyline(routePoints, { color: '#e47b56', weight: 5, opacity: .95, lineCap: 'round' }).addTo(routeLayer); routeMeta.textContent = `Walking route · ${Math.max(1, Math.round(route.duration / 60))} min · ${(route.distance / 1000).toFixed(1)} km`; } catch { L.polyline([origin, place.coords], { color: '#e47b56', weight: 4, dashArray: '4 8', opacity: .9 }).addTo(routeLayer); routeMeta.textContent = 'Walking route preview · route service unavailable'; } }
+async function calculateRoute(place) {
+  const origin = currentCoords || campus;
+  const routeColor = navigationPreferences.stepFree || navigationPreferences.wheelchair ? '#55b779' : '#e47b56';
+  const accessibilityQuery = navigationPreferences.stepFree || navigationPreferences.wheelchair ? '&accessibility_mode=step_free' : '';
+  const apiBase = window.UNICAL_API_BASE || '';
+  try {
+    let response = apiBase ? await fetch(`${apiBase}/api/routes/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: place.coords, accessibility_mode: navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'step_free' : null }) }) : null;
+    if (!response || !response.ok) {
+      const url = `https://router.project-osrm.org/route/v1/foot/${origin[1]},${origin[0]};${place.coords[1]},${place.coords[0]}?overview=full&geometries=geojson${accessibilityQuery}`;
+      response = await fetch(url);
+    }
+    if (!response.ok) throw new Error('route unavailable');
+    const data = await response.json();
+    const route = data.routes?.[0] || data;
+    const routePoints = route.geometry?.coordinates?.map(([longitude, latitude]) => [latitude, longitude]) || route.coordinates;
+    if (!routePoints?.length) throw new Error('route unavailable');
+    L.polyline(routePoints, { color: routeColor, weight: 5, opacity: .95, lineCap: 'round' }).addTo(routeLayer);
+    const distance = Number(route.distance || 0);
+    const duration = Number(route.duration || route.total_time || 0);
+    routeMeta.textContent = `${navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'Step-free' : 'Walking'} route · ${Math.max(1, Math.round(duration / 60))} min · ${(distance / 1000).toFixed(1)} km`;
+  } catch {
+    const fallback = navigationPreferences.stepFree || navigationPreferences.wheelchair
+      ? pathways.find((path) => path.stepFree)?.points || [origin, place.coords]
+      : [origin, place.coords];
+    L.polyline(fallback, { color: routeColor, weight: 4, dashArray: '4 8', opacity: .9 }).addTo(routeLayer);
+    routeMeta.textContent = `${navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'Step-free' : 'Walking'} route preview · route service unavailable`;
+  }
+}
 const locationDialog = document.getElementById('locationDialog');
 let pendingCoords;
 let currentCapturedCoords;

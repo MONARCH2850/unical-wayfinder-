@@ -23,3 +23,9 @@ For reliable campus navigation, GPS must place you inside the UNICAL campus boun
 ## Data note
 
 This project does not copy Google Maps tiles or proprietary Google map data. It uses OpenStreetMap tiles clipped to the campus viewport and a local overlay for campus pathways and landmarks. Several added facilities are marked `verify` because their coordinates and names must be checked against official University of Calabar GIS data or a current field survey before publishing as an authoritative campus guide.
+
+## Accessibility and backend integration
+
+The sidebar accessibility panel supports wheelchair, step-free, audio, and vibration preferences. Preferences are stored on-device, accessible routes render in green, and standard walking routes render in orange. Starting navigation continues to use `watchPosition()` with permission-denied fallbacks; the AR button opens the camera view with an A-Frame directional overlay when supported.
+
+The optional Django/PostGIS modules are in [`backend/`](backend/). After deploying that API, set `window.UNICAL_API_BASE` before `app.js` loads. The frontend will try `POST /api/routes/` first and retain its OSRM and direct-preview fallbacks when the API is unavailable. The backend documents PostGIS setup, token endpoints, accessibility data, and the additive migration in [`backend/README.md`](backend/README.md).
