@@ -3,13 +3,13 @@
   const OBSTACLE_CLASSES = new Set([
     'person', 'bicycle', 'car', 'motorcycle', 'bus', 'truck'
   ]);
+  const MIN_BOX_AREA_RATIO = 0.15;
+  const ALERT_COOLDOWN_MS = 4000;
   const DEFAULTS = {
-    scoreThreshold: 0.55,
-    nearAreaRatio: 0.12,
+    scoreThreshold: 0.68,
+    nearAreaRatio: 0.15,
     centralPathWidth: 0.42,
-    detectionIntervalMs: 180,
-    voiceCooldownMs: 7000,
-    clearVoiceCooldownMs: 12000
+    detectionIntervalMs: 180
   };
 
   class ObstacleDetection {
@@ -19,7 +19,7 @@
       this.model = null;
       this.animationFrame = null;
       this.lastDetectionAt = 0;
-      this.lastVoiceAt = 0;
+      this.lastAlertAt = 0;
       this.lastState = 'loading';
       this.running = false;
       this.loading = false;
@@ -102,8 +102,13 @@
       const height = this.video.videoHeight || this.canvas.height;
       const scaleX = this.canvas.width / width;
       const scaleY = this.canvas.height / height;
+      const totalArea = width * height;
       const obstacles = predictions
-        .filter((prediction) => OBSTACLE_CLASSES.has(prediction.class) && prediction.score >= this.options.scoreThreshold)
+        .filter((prediction) => {
+          if (!OBSTACLE_CLASSES.has(prediction.class) || prediction.score < this.options.scoreThreshold) return false;
+          const [, , boxWidth, boxHeight] = prediction.bbox;
+          return (boxWidth * boxHeight) / totalArea >= MIN_BOX_AREA_RATIO;
+        })
         .map((prediction) => this.describe(prediction, width, height));
 
       obstacles.forEach((obstacle) => this.drawObstacle(obstacle, scaleX, scaleY));
@@ -138,10 +143,13 @@
     announceCue(cue, state) {
       const now = Date.now();
       const changed = state !== this.lastState;
-      const cooldown = state === 'clear' ? this.options.clearVoiceCooldownMs : this.options.voiceCooldownMs;
-      if ((changed || now - this.lastVoiceAt >= cooldown) && typeof window.speakCue === 'function') {
+      if (now - this.lastAlertAt >= ALERT_COOLDOWN_MS && typeof window.speakCue === 'function') {
+        if (window.speechSynthesis && typeof window.speechSynthesis.cancel === 'function') {
+          window.speechSynthesis.cancel();
+        }
         window.speakCue(cue.speech);
-        this.lastVoiceAt = now;
+        if (navigator.vibrate) navigator.vibrate(120);
+        this.lastAlertAt = now;
       }
       if (changed && typeof window.announceForA11y === 'function') window.announceForA11y(cue.text);
       this.lastState = state;
