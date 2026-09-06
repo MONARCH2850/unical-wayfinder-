@@ -1,5 +1,6 @@
 import heapq
 import math
+from django.db import transaction
 from django.contrib.auth import get_user_model
 from rest_framework import permissions, status
 from rest_framework.authentication import TokenAuthentication
@@ -40,6 +41,51 @@ def locations(request):
         latitude, longitude = map(float, request.query_params['near'].split(','))
         queryset = sorted(queryset, key=lambda place: distance((latitude, longitude), (place.latitude, place.longitude)))
     return Response(LocationSerializer(queryset, many=True).data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def sync_spots(request):
+    if not isinstance(request.data, list):
+        return Response({'detail': 'The request body must be a JSON array of spots.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    required_fields = {'name', 'latitude', 'longitude', 'feature_type', 'is_accessible'}
+    locations_to_create = []
+    for index, spot in enumerate(request.data):
+        if not isinstance(spot, dict):
+            return Response({'detail': f'Spot at index {index} must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
+        missing_fields = required_fields - spot.keys()
+        if missing_fields:
+            return Response({'detail': f'Spot at index {index} is missing: {", ".join(sorted(missing_fields))}.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            name = str(spot['name']).strip()
+            latitude = float(spot['latitude'])
+            longitude = float(spot['longitude'])
+        except (TypeError, ValueError):
+            return Response({'detail': f'Spot at index {index} has invalid name or coordinates.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not name or not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            return Response({'detail': f'Spot at index {index} has invalid name or coordinates.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(spot['is_accessible'], bool):
+            return Response({'detail': f'Spot at index {index} must use a boolean is_accessible value.'}, status=status.HTTP_400_BAD_REQUEST)
+        feature_type = str(spot['feature_type'] or '').strip()
+        if len(name) > 160 or len(feature_type) > 40:
+            return Response({'detail': f'Spot at index {index} exceeds a field length limit.'}, status=status.HTTP_400_BAD_REQUEST)
+        locations_to_create.append((name, latitude, longitude, feature_type, spot['is_accessible']))
+
+    # Keep the upload all-or-nothing so a partial phone queue is never persisted.
+    with transaction.atomic():
+        for name, latitude, longitude, feature_type, is_accessible in locations_to_create:
+            location = Location.objects.create(name=name, latitude=latitude, longitude=longitude)
+            if feature_type:
+                AccessibilityFeature.objects.create(
+                    location=location,
+                    feature_type=feature_type,
+                    is_step_free=is_accessible,
+                    has_ramp=is_accessible,
+                )
+
+    count = len(locations_to_create)
+    return Response({'status': 'success', 'message': f'Successfully pushed {count} spots to the backend database!'}, status=status.HTTP_201_CREATED)
 
 
 def distance(start, end):

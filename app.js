@@ -242,6 +242,7 @@ const unicalCampusOnlyBounds = L.latLngBounds(
 let installPrompt;
 let places = [];
 const SAVED_PLACES_KEY = 'unical_places';
+const TAGGED_SPOTS_KEY = 'unical_tagged_spots';
 function getStoredPlaces() {
   try {
     const stored = localStorage.getItem(SAVED_PLACES_KEY);
@@ -259,6 +260,60 @@ function persistPlaces() {
     lng: Number(place.coords[1])
   }))));
 }
+function queueTaggedSpot({ name, lat, lng, featureType = '', isAccessible = false }) {
+  let queuedSpots = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
+    queuedSpots = Array.isArray(stored) ? stored : [];
+  } catch {
+  }
+  queuedSpots.push({
+    name,
+    latitude: Number(lat),
+    longitude: Number(lng),
+    feature_type: featureType,
+    is_accessible: Boolean(isAccessible)
+  });
+  localStorage.setItem(TAGGED_SPOTS_KEY, JSON.stringify(queuedSpots));
+}
+async function pushSpotsToBackend() {
+  let spots;
+  try {
+    spots = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
+  } catch {
+    spots = [];
+  }
+  if (!Array.isArray(spots) || spots.length === 0) {
+    alert('No unsynced spots found on this phone.');
+    return;
+  }
+
+  const pcIp = window.UNICAL_PC_LOCAL_IP;
+  const syncUrl = window.UNICAL_SPOTS_SYNC_URL || (pcIp ? `http://${pcIp}:8000/api/spots/sync/` : '');
+  if (!syncUrl) {
+    alert('Set window.UNICAL_PC_LOCAL_IP to your PC local IP before syncing.');
+    return;
+  }
+
+  try {
+    const response = await fetch(syncUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(spots)
+    });
+    const data = await response.json();
+    if (!response.ok || data.status !== 'success') {
+      throw new Error(data.detail || 'The backend rejected the sync.');
+    }
+    alert(data.message);
+    // Only clear the queue after the backend confirms the complete upload.
+    localStorage.removeItem(TAGGED_SPOTS_KEY);
+  } catch (error) {
+    console.error('Spot sync failed:', error);
+    alert('Unable to sync spots. Check that the PC server is running and the IP address is correct.');
+  }
+}
+window.pushSpotsToBackend = pushSpotsToBackend;
 function buildSavedPlace(name, lat, lng, type = 'Saved • custom', description = '') {
   return {
     name,
@@ -509,6 +564,7 @@ function submitCapturedSpot({ name, lat, lng, type = 'Saved • custom', descrip
   const place = buildSavedPlace(normalizedName, parsedLat, parsedLng, type, description);
   places.push(place);
   persistPlaces();
+  queueTaggedSpot({ name: normalizedName, lat: parsedLat, lng: parsedLng, featureType: type });
   addPlaceMarker(place);
   addPlaceButton(place);
   map.closePopup();
@@ -523,6 +579,7 @@ function submitCapturedSpot({ name, lat, lng, type = 'Saved • custom', descrip
 map.on('popupopen', (event) => { const saveButton = event.popup.getElement()?.querySelector('#confirmSaveSpotBtn'); const nameInput = event.popup.getElement()?.querySelector('#spotNameInput'); if (!saveButton || !nameInput) return; saveButton.addEventListener('click', savePopupLocation); nameInput.focus(); });
 async function savePopupLocation() { const locName = document.getElementById('spotNameInput')?.value.trim(); if (!locName || !currentCapturedCoords) { alert('Please enter a location name.'); announceForA11y('Please enter a location name'); speakCue('Please enter a location name'); return; } try { announceForA11y(`Saving location: ${locName}`); speakCue(`Saving location: ${locName}`); const savedPlace = submitCapturedSpot({ name: locName, lat: currentCapturedCoords[0], lng: currentCapturedCoords[1], type: 'Landmark · saved', description: '' }); if (!savedPlace) { throw new Error('save failed'); } map.closePopup(); currentCapturedCoords = null; } catch { triggerVibration('error'); const errMsg = 'Failed to save location. Please try again.'; alert(errMsg); announceForA11y(errMsg); speakCue(errMsg); } }
 document.getElementById('add-spot-btn').addEventListener('click', addLocationAtCurrentGPS);
+document.getElementById('sync-spots-btn').addEventListener('click', pushSpotsToBackend);
 document.getElementById('accessibility-toggle-btn').addEventListener('click', toggleAccessibilityMode);
 document.getElementById('closeLocationDialog').addEventListener('click', () => locationDialog.close());
 document.getElementById('locationForm').addEventListener('submit', (event) => { event.preventDefault(); if (!pendingCoords) return showToast('Capture a location before saving.'); const locationDetails = { name: document.getElementById('locationName').value.trim(), category: document.getElementById('locationType').value, description: document.getElementById('locationDescription').value.trim(), latitude: pendingCoords[0], longitude: pendingCoords[1] }; if (!locationDetails.name) return; const saveButton = event.currentTarget.querySelector('button[type="submit"]'); saveButton.disabled = true; try { const place = submitCapturedSpot({ name: locationDetails.name, lat: locationDetails.latitude, lng: locationDetails.longitude, type: `${locationDetails.category} · saved`, description: locationDetails.description }); if (!place) throw new Error('save failed'); locationDialog.close(); document.getElementById('locationForm').reset(); pendingCoords = null; selectPlace(place); } catch { showToast('Unable to save location. Please try again.'); } finally { saveButton.disabled = false; } });
