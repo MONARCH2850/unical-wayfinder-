@@ -277,21 +277,34 @@ function queueTaggedSpot({ name, lat, lng, featureType = '', isAccessible = fals
   localStorage.setItem(TAGGED_SPOTS_KEY, JSON.stringify(queuedSpots));
 }
 async function pushSpotsToBackend() {
-  let spots;
+  let savedPlaces;
   try {
-    spots = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
+    savedPlaces = JSON.parse(localStorage.getItem(SAVED_PLACES_KEY) || '[]');
   } catch {
-    spots = [];
+    savedPlaces = [];
   }
+  let queuedSpots = [];
+  try {
+    const storedQueue = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
+    queuedSpots = Array.isArray(storedQueue) ? storedQueue : [];
+  } catch {
+  }
+  const spots = (Array.isArray(savedPlaces) ? savedPlaces.map((place) => ({
+    name: place.name,
+    latitude: Number(place.lat),
+    longitude: Number(place.lng),
+    feature_type: '',
+    is_accessible: false
+  })) : []).concat(Array.isArray(queuedSpots) ? queuedSpots : []);
   if (!Array.isArray(spots) || spots.length === 0) {
     alert('No unsynced spots found on this phone.');
     return;
   }
 
-  const pcIp = window.UNICAL_PC_LOCAL_IP;
-  const syncUrl = window.UNICAL_SPOTS_SYNC_URL || (pcIp ? `http://${pcIp}:8000/api/spots/sync/` : '');
+  const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
+  const syncUrl = window.UNICAL_SPOTS_SYNC_URL || (apiBase ? `${apiBase}/api/spots/sync/` : '');
   if (!syncUrl) {
-    alert('Set window.UNICAL_PC_LOCAL_IP to your PC local IP before syncing.');
+    alert('Configure window.UNICAL_API_BASE with the public backend URL before syncing.');
     return;
   }
 
@@ -306,7 +319,7 @@ async function pushSpotsToBackend() {
       throw new Error(data.detail || 'The backend rejected the sync.');
     }
     alert(data.message);
-    // Only clear the queue after the backend confirms the complete upload.
+    // Keep the phone's saved places for map use; clear only the upload queue.
     localStorage.removeItem(TAGGED_SPOTS_KEY);
   } catch (error) {
     console.error('Spot sync failed:', error);
