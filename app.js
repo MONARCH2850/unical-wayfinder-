@@ -308,27 +308,15 @@ function queueTaggedSpot({ name, lat, lng, featureType = '', isAccessible = fals
   localStorage.setItem(TAGGED_SPOTS_KEY, JSON.stringify(queuedSpots));
 }
 async function pushSpotsToBackend() {
-  let savedPlaces;
-  try {
-    savedPlaces = JSON.parse(localStorage.getItem(SAVED_PLACES_KEY) || '[]');
-  } catch {
-    savedPlaces = [];
-  }
   let queuedSpots = [];
   try {
     const storedQueue = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
     queuedSpots = Array.isArray(storedQueue) ? storedQueue : [];
   } catch {
   }
-  const spots = (Array.isArray(savedPlaces) ? savedPlaces.map((place) => ({
-    name: place.name,
-    latitude: Number(place.lat),
-    longitude: Number(place.lng),
-    feature_type: '',
-    is_accessible: false
-  })) : []).concat(Array.isArray(queuedSpots) ? queuedSpots : []);
+  const spots = Array.isArray(queuedSpots) ? queuedSpots : [];
   if (!Array.isArray(spots) || spots.length === 0) {
-    alert('No unsynced spots found on this phone.');
+    alert('No tagged spots found on this phone.');
     return;
   }
 
