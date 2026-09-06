@@ -260,6 +260,37 @@ function persistPlaces() {
     lng: Number(place.coords[1])
   }))));
 }
+function placeKey(name, lat, lng) {
+  return `${String(name).trim().toLowerCase()}|${Number(lat).toFixed(6)}|${Number(lng).toFixed(6)}`;
+}
+async function pullPlacesFromBackend() {
+  const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
+  if (!apiBase) return;
+
+  try {
+    const response = await fetch(`${apiBase}/api/locations/`);
+    if (!response.ok) throw new Error('The backend rejected the places request.');
+    const remotePlaces = await response.json();
+    if (!Array.isArray(remotePlaces)) return;
+
+    const merged = getStoredPlaces();
+    const knownPlaces = new Set(merged.map((place) => placeKey(place.name, place.lat, place.lng)));
+    remotePlaces.forEach((place) => {
+      const lat = Number(place.latitude);
+      const lng = Number(place.longitude);
+      if (!place.name || Number.isNaN(lat) || Number.isNaN(lng)) return;
+      const key = placeKey(place.name, lat, lng);
+      if (knownPlaces.has(key)) return;
+      knownPlaces.add(key);
+      merged.push({ name: String(place.name).trim(), lat, lng });
+    });
+
+    localStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(merged));
+    renderSavedPlacesFromStorage();
+  } catch (error) {
+    console.warn('Could not load shared places:', error);
+  }
+}
 function queueTaggedSpot({ name, lat, lng, featureType = '', isAccessible = false }) {
   let queuedSpots = [];
   try {
@@ -358,7 +389,10 @@ function renderSavedPlacesFromStorage() {
   if (!places.length) renderEmptyPlaceState();
   document.getElementById('placeCount').textContent = `${String(document.querySelectorAll('.place-item').length).padStart(2, '0')} PLACES`;
 }
-document.addEventListener('DOMContentLoaded', renderSavedPlacesFromStorage);
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSavedPlacesFromStorage();
+  await pullPlacesFromBackend();
+});
 let currentCoords;
 let selectedPlace;
 let navigationWatchId = null;

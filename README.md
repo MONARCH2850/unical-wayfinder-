@@ -14,7 +14,7 @@ Tap **Add this place**, allow location access, enter a name and category, then s
 
 The location categories include **Church** and **Mosque**. To add worship locations accurately, stand at each location on campus and save it from the phone so its coordinates come from GPS.
 
-This version has no shared server: a place added on one phone is not automatically visible to other users. Shared campus updates require connecting the form to an authenticated backend/database.
+When the optional backend is configured, places are shared across devices: each app load fetches `/api/locations/` and merges new backend places into the device's local map. A place added on one phone must still be uploaded with **Upload Saved Spots** before other devices can see it. The sync endpoint ignores an existing place with the same name and coordinates, so repeated uploads do not create another copy.
 
 Select a place and tap **Start navigation** to open walking turn-by-turn directions in Google Maps using your current position and the saved destination.
 
@@ -30,4 +30,4 @@ The sidebar accessibility panel supports wheelchair, step-free, audio, and vibra
 
 The optional Django/PostGIS modules are in [`backend/`](backend/). After deploying that API, set `window.UNICAL_API_BASE` before `app.js` loads. The frontend will try `POST /api/routes/` first and retain its OSRM and direct-preview fallbacks when the API is unavailable. The backend documents PostGIS setup, token endpoints, accessibility data, and the additive migration in [`backend/README.md`](backend/README.md).
 
-To upload spots from a phone without Wi-Fi, deploy the Django backend at a publicly reachable HTTPS URL and define `window.UNICAL_API_BASE` before loading `app.js` (for example, `https://api.example.com`). The **Upload Saved Spots** button sends the existing `unical_places` records, plus any queued `unical_tagged_spots` records, to `/api/spots/sync/` over mobile data. Saved places remain on the phone for map use; the upload queue is cleared only after a successful response. The Django server must allow the phone's origin through CORS.
+To share spots from a phone without Wi-Fi, deploy the Django backend at a publicly reachable HTTPS URL and define `window.UNICAL_API_BASE` before loading `app.js` (for example, `https://api.example.com`). The **Upload Saved Spots** button sends the existing `unical_places` records, plus any queued `unical_tagged_spots` records, to `/api/spots/sync/` over mobile data. Saved places remain on the phone for map use; the upload queue is cleared only after a successful response. Other devices automatically pull the shared records from `/api/locations/` on startup. The Django server must allow the phone's origin through CORS.

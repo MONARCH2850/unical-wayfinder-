@@ -73,9 +73,13 @@ def sync_spots(request):
         locations_to_create.append((name, latitude, longitude, feature_type, spot['is_accessible']))
 
     # Keep the upload all-or-nothing so a partial phone queue is never persisted.
+    created_count = 0
     with transaction.atomic():
         for name, latitude, longitude, feature_type, is_accessible in locations_to_create:
+            if Location.objects.filter(name=name, latitude=latitude, longitude=longitude).exists():
+                continue
             location = Location.objects.create(name=name, latitude=latitude, longitude=longitude)
+            created_count += 1
             if feature_type:
                 AccessibilityFeature.objects.create(
                     location=location,
@@ -84,8 +88,7 @@ def sync_spots(request):
                     has_ramp=is_accessible,
                 )
 
-    count = len(locations_to_create)
-    return Response({'status': 'success', 'message': f'Successfully pushed {count} spots to the backend database!'}, status=status.HTTP_201_CREATED)
+    return Response({'status': 'success', 'created': created_count, 'message': f'Successfully pushed {created_count} new spots to the backend database.'}, status=status.HTTP_201_CREATED)
 
 
 def distance(start, end):
