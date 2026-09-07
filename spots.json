@@ -30,5 +30,109 @@
     "lng": 8.3452,
     "category": "Hostel",
     "description": "Malabor student residence, Hall 5."
+  },
+  {
+    "id": "malabor-square",
+    "name": "Malabor Square",
+    "lat": 4.9469,
+    "lng": 8.3460,
+    "category": "Landmark",
+    "description": "Malabor campus square."
+  },
+  {
+    "id": "old-faculty-of-law",
+    "name": "Old Faculty of Law",
+    "lat": 4.9483,
+    "lng": 8.3478,
+    "category": "Faculty",
+    "description": "Old Faculty of Law building."
+  },
+  {
+    "id": "faculty-of-administration-and-management-science",
+    "name": "Faculty of Administration and Management Science",
+    "lat": 4.9482,
+    "lng": 8.3486,
+    "category": "Faculty",
+    "description": "Faculty of Administration and Management Science."
+  },
+  {
+    "id": "faculty-of-art-complex",
+    "name": "Faculty of Art Complex",
+    "lat": 4.9486,
+    "lng": 8.3483,
+    "category": "Faculty",
+    "description": "Faculty of Art Complex."
+  },
+  {
+    "id": "mathematics-department",
+    "name": "Mathematics Department",
+    "lat": 4.9512,
+    "lng": 8.3498,
+    "category": "Department",
+    "description": "Mathematics Department."
+  },
+  {
+    "id": "chemistry-department",
+    "name": "Chemistry Department",
+    "lat": 4.9502,
+    "lng": 8.3517,
+    "category": "Department",
+    "description": "Chemistry Department."
+  },
+  {
+    "id": "pavilion-d",
+    "name": "Pavilion D",
+    "lat": 4.9492,
+    "lng": 8.3515,
+    "category": "Pavilion",
+    "description": "Pavilion D."
+  },
+  {
+    "id": "pavilion-e",
+    "name": "Pavilion E",
+    "lat": 4.9487,
+    "lng": 8.3521,
+    "category": "Pavilion",
+    "description": "Pavilion E."
+  },
+  {
+    "id": "pavilion-f",
+    "name": "Pavilion F",
+    "lat": 4.9490,
+    "lng": 8.3525,
+    "category": "Pavilion",
+    "description": "Pavilion F."
+  },
+  {
+    "id": "computer-science-department",
+    "name": "Computer Science Department",
+    "lat": 4.9499,
+    "lng": 8.3537,
+    "category": "Department",
+    "description": "Computer Science Department."
+  },
+  {
+    "id": "biology-department",
+    "name": "Biology department",
+    "lat": 4.9504,
+    "lng": 8.3531,
+    "category": "Department",
+    "description": "Biology Department."
+  },
+  {
+    "id": "e-library",
+    "name": "E library",
+    "lat": 4.9493,
+    "lng": 8.3499,
+    "category": "Library",
+    "description": "Electronic library."
+  },
+  {
+    "id": "law-garden",
+    "name": "Law garden",
+    "lat": 4.9495,
+    "lng": 8.3499,
+    "category": "Garden",
+    "description": "Law garden."
   }
 ]
