@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path('api/login/', views.login),
     path('api/register/', views.register),
+    path('api/spots/', views.locations),
     path('api/locations/', views.locations),
     path('api/spots/sync/', views.sync_spots),
     path('api/routes/', views.routes),

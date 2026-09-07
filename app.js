@@ -283,7 +283,7 @@ function normalizeSpot(spot) {
     name: String(spot.name).trim(),
     lat,
     lng,
-    type: spot.type || spot.feature_type || 'Saved • custom',
+    type: spot.type || spot.category || spot.feature_type || 'Saved • custom',
     description: spot.description || ''
   };
 }
@@ -330,7 +330,7 @@ async function pullPlacesFromBackend() {
 
   if (apiBase) {
     try {
-      const databaseSpots = await fetchSpotList(window.UNICAL_SPOTS_URL || `${apiBase}/api/locations/`);
+      const databaseSpots = await fetchSpotList(`${apiBase}/api/spots/`);
       const merged = uniqueSpots([...databaseSpots, ...localSpots]);
       localStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(merged.map((spot) => ({ name: spot.name, lat: spot.lat, lng: spot.lng }))));
       renderSpots(merged);
@@ -375,7 +375,6 @@ async function pushSpotsToBackend({ silent = false } = {}) {
   }
   const spots = Array.isArray(queuedSpots) ? queuedSpots : [];
   if (!Array.isArray(spots) || spots.length === 0) {
-    if (!silent) alert('No tagged spots found on this phone.');
     return;
   }
 
