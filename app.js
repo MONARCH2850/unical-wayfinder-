@@ -446,7 +446,7 @@ let lastAcceptedCoords = null;
 let lastAcceptedTimestamp = 0;
 let markerAnimationFrame = null;
 let lastKnownAccuracy = Number.POSITIVE_INFINITY;
-const MIN_MOVEMENT_METERS = 2.5;
+const MIN_MOVEMENT_METERS = 3;
 const GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 };
 const INITIAL_GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 };
 const map = L.map('map', {
@@ -602,24 +602,34 @@ window.addEventListener('deviceorientation', handleDeviceOrientation, true);
 function acceptPosition(position, { recenter = false, force = false } = {}) {
   const accuracy = Number(position.coords.accuracy);
   lastKnownAccuracy = Number.isFinite(accuracy) ? accuracy : Number.POSITIVE_INFINITY;
-  if (lastKnownAccuracy > 20) {
+  if (lastKnownAccuracy > 15) {
     setGpsStatus(true);
     return false;
   }
   const coords = [Number(position.coords.latitude), Number(position.coords.longitude)];
   const now = Number(position.timestamp) || Date.now();
-  const distance = lastAcceptedCoords ? calculateDistanceMeters(lastAcceptedCoords, coords) : Number.POSITIVE_INFINITY;
+  const previousCoords = lastAcceptedCoords;
+  const distance = previousCoords
+    ? L.latLng(previousCoords[0], previousCoords[1]).distanceTo(L.latLng(coords[0], coords[1]))
+    : Number.POSITIVE_INFINITY;
   const elapsedSeconds = lastAcceptedTimestamp ? Math.max((now - lastAcceptedTimestamp) / 1000, 0.001) : 0;
-  const speed = Number(position.coords.speed);
-  const moving = Number.isFinite(speed) && speed > 0.5;
-  if (!force && lastAcceptedCoords && distance < MIN_MOVEMENT_METERS && !moving) return false;
+  const reportedSpeed = Number(position.coords.speed);
+  const calculatedSpeed = elapsedSeconds ? distance / elapsedSeconds : 0;
+  const hasReportedSpeed = typeof position.coords.speed === 'number' && Number.isFinite(reportedSpeed) && reportedSpeed >= 0;
+  const speed = hasReportedSpeed ? reportedSpeed : calculatedSpeed;
+  const moving = distance >= MIN_MOVEMENT_METERS && speed > 0.3;
+  if (!force && previousCoords && !moving) return false;
   lastAcceptedCoords = coords;
   lastAcceptedTimestamp = now;
   currentCoords = coords;
   if (userMarker) animateUserMarker(coords);
   updateCurrentLocation(position, recenter, true);
-  if (moving || distance / elapsedSeconds > 0.5) {
-    const heading = Number.isFinite(position.coords.heading) ? position.coords.heading : arState.lastHeading;
+  if (moving && previousCoords) {
+    const bearing = calculateBearingDegrees(previousCoords, coords);
+    const heading = Number.isFinite(position.coords.heading) && position.coords.speed > 0.5
+      ? position.coords.heading
+      : bearing;
+    arState.lastHeading = heading;
     setUserMarkerHeading(heading);
   }
   setGpsStatus(false);
