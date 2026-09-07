@@ -307,7 +307,7 @@ function queueTaggedSpot({ name, lat, lng, featureType = '', isAccessible = fals
   });
   localStorage.setItem(TAGGED_SPOTS_KEY, JSON.stringify(queuedSpots));
 }
-async function pushSpotsToBackend() {
+async function pushSpotsToBackend({ silent = false } = {}) {
   let queuedSpots = [];
   try {
     const storedQueue = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
@@ -316,14 +316,14 @@ async function pushSpotsToBackend() {
   }
   const spots = Array.isArray(queuedSpots) ? queuedSpots : [];
   if (!Array.isArray(spots) || spots.length === 0) {
-    alert('No tagged spots found on this phone.');
+    if (!silent) alert('No tagged spots found on this phone.');
     return;
   }
 
   const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
   const syncUrl = window.UNICAL_SPOTS_SYNC_URL || (apiBase ? `${apiBase}/api/spots/sync/` : '');
   if (!syncUrl) {
-    alert('Configure window.UNICAL_API_BASE with the public backend URL before syncing.');
+    if (!silent) alert('Configure window.UNICAL_API_BASE with the public backend URL before syncing.');
     return;
   }
 
@@ -337,15 +337,19 @@ async function pushSpotsToBackend() {
     if (!response.ok || data.status !== 'success') {
       throw new Error(data.detail || 'The backend rejected the sync.');
     }
-    alert(data.message);
+    if (!silent) alert(data.message);
     // Keep the phone's saved places for map use; clear only the upload queue.
     localStorage.removeItem(TAGGED_SPOTS_KEY);
+    if (silent) showToast(`${data.created || 0} saved spot${data.created === 1 ? '' : 's'} shared with everyone.`);
   } catch (error) {
     console.error('Spot sync failed:', error);
-    alert('Unable to sync spots. Check that the PC server is running and the IP address is correct.');
+    if (!silent) alert('Unable to sync spots. They will remain queued and retry when the API is available.');
   }
 }
 window.pushSpotsToBackend = pushSpotsToBackend;
+function syncSavedSpotsInBackground() {
+  return pushSpotsToBackend({ silent: true });
+}
 function buildSavedPlace(name, lat, lng, type = 'Saved • custom', description = '') {
   return {
     name,
@@ -365,6 +369,7 @@ function renderSavedPlacesFromStorage() {
   const placeListEl = document.getElementById('placeList');
   if (!placeListEl) return;
 
+  markerLayer.clearLayers();
   places = [];
   placeListEl.innerHTML = '';
   saved.forEach((entry) => {
@@ -380,6 +385,14 @@ function renderSavedPlacesFromStorage() {
 document.addEventListener('DOMContentLoaded', async () => {
   renderSavedPlacesFromStorage();
   await pullPlacesFromBackend();
+  await syncSavedSpotsInBackground();
+});
+window.addEventListener('online', async () => {
+  await syncSavedSpotsInBackground();
+  await pullPlacesFromBackend();
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) pullPlacesFromBackend();
 });
 let currentCoords;
 let selectedPlace;
@@ -609,12 +622,13 @@ function submitCapturedSpot({ name, lat, lng, type = 'Saved • custom', descrip
   showToast(successMsg);
   announceForA11y(successMsg);
   speakCue(successMsg);
+  syncSavedSpotsInBackground();
   return place;
 }
 map.on('popupopen', (event) => { const saveButton = event.popup.getElement()?.querySelector('#confirmSaveSpotBtn'); const nameInput = event.popup.getElement()?.querySelector('#spotNameInput'); if (!saveButton || !nameInput) return; saveButton.addEventListener('click', savePopupLocation); nameInput.focus(); });
 async function savePopupLocation() { const locName = document.getElementById('spotNameInput')?.value.trim(); if (!locName || !currentCapturedCoords) { alert('Please enter a location name.'); announceForA11y('Please enter a location name'); speakCue('Please enter a location name'); return; } try { announceForA11y(`Saving location: ${locName}`); speakCue(`Saving location: ${locName}`); const savedPlace = submitCapturedSpot({ name: locName, lat: currentCapturedCoords[0], lng: currentCapturedCoords[1], type: 'Landmark · saved', description: '' }); if (!savedPlace) { throw new Error('save failed'); } map.closePopup(); currentCapturedCoords = null; } catch { triggerVibration('error'); const errMsg = 'Failed to save location. Please try again.'; alert(errMsg); announceForA11y(errMsg); speakCue(errMsg); } }
 document.getElementById('add-spot-btn').addEventListener('click', addLocationAtCurrentGPS);
-document.getElementById('sync-spots-btn').addEventListener('click', pushSpotsToBackend);
+document.getElementById('sync-spots-btn').addEventListener('click', () => pushSpotsToBackend());
 document.getElementById('accessibility-toggle-btn').addEventListener('click', toggleAccessibilityMode);
 document.getElementById('closeLocationDialog').addEventListener('click', () => locationDialog.close());
 document.getElementById('locationForm').addEventListener('submit', (event) => { event.preventDefault(); if (!pendingCoords) return showToast('Capture a location before saving.'); const locationDetails = { name: document.getElementById('locationName').value.trim(), category: document.getElementById('locationType').value, description: document.getElementById('locationDescription').value.trim(), latitude: pendingCoords[0], longitude: pendingCoords[1] }; if (!locationDetails.name) return; const saveButton = event.currentTarget.querySelector('button[type="submit"]'); saveButton.disabled = true; try { const place = submitCapturedSpot({ name: locationDetails.name, lat: locationDetails.latitude, lng: locationDetails.longitude, type: `${locationDetails.category} · saved`, description: locationDetails.description }); if (!place) throw new Error('save failed'); locationDialog.close(); document.getElementById('locationForm').reset(); pendingCoords = null; selectPlace(place); } catch { showToast('Unable to save location. Please try again.'); } finally { saveButton.disabled = false; } });
