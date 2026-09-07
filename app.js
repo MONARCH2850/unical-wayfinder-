@@ -464,6 +464,16 @@ const map = L.map('map', {
   maxBounds: unicalCampusOnlyBounds,
   maxBoundsViscosity: 1.0
 });
+const topPanel = document.getElementById('top-panel');
+const topPanelToggle = document.getElementById('top-panel-toggle');
+topPanelToggle?.addEventListener('click', () => {
+  const collapsed = topPanel.classList.toggle('is-collapsed');
+  topPanelToggle.setAttribute('aria-expanded', String(!collapsed));
+  topPanelToggle.setAttribute('aria-label', collapsed ? 'Expand navigation menu' : 'Collapse navigation menu');
+  window.setTimeout(() => map.invalidateSize(), 300);
+});
+window.addEventListener('load', () => map.invalidateSize());
+if (topPanel && typeof ResizeObserver !== 'undefined') new ResizeObserver(() => map.invalidateSize()).observe(topPanel);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; document.getElementById('installButton').hidden = false; });
 document.getElementById('installButton').addEventListener('click', async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; document.getElementById('installButton').hidden = true; });
