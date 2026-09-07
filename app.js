@@ -446,9 +446,14 @@ let lastAcceptedCoords = null;
 let lastAcceptedTimestamp = 0;
 let markerAnimationFrame = null;
 let lastKnownAccuracy = Number.POSITIVE_INFINITY;
+let smoothedCoords = null;
+let gpsRecoveryTimer = null;
 const MIN_MOVEMENT_METERS = 3;
-const GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 };
+const GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 };
 const INITIAL_GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 };
+const GPS_ACCURACY_LIMIT_METERS = 12;
+const EMA_ALPHA = 0.35;
+const SNAP_DISTANCE_METERS = 10;
 const map = L.map('map', {
   zoomControl: false,
   center: [4.9510, 8.3450],
@@ -557,6 +562,10 @@ function stopNavigation() {
     navigator.geolocation.clearWatch(navigationWatchId);
     navigationWatchId = null;
   }
+  if (gpsRecoveryTimer) {
+    clearTimeout(gpsRecoveryTimer);
+    gpsRecoveryTimer = null;
+  }
   startContinuousLocationTracking();
   setGpsStatus(false);
   if (selectedPlace) routeMeta.textContent = `${selectedPlace.type.split(' · ')[0]} · ready to navigate`;
@@ -565,7 +574,9 @@ function stopNavigation() {
 function setGpsStatus(isSearching) {
   const statusText = document.getElementById('statusText');
   if (!statusText) return;
-  statusText.textContent = isSearching ? 'Searching for precise GPS...' : 'Live location enabled';
+  statusText.textContent = typeof isSearching === 'string'
+    ? isSearching
+    : (isSearching ? 'Improving GPS accuracy...' : 'Live location enabled');
 }
 function setUserMarkerHeading(heading) {
   const markerDot = userMarker?._icon?.querySelector('span');
@@ -599,10 +610,43 @@ function handleDeviceOrientation(event) {
   updateARTargetDisplay();
 }
 window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+function projectPointToSegment(point, start, end) {
+  const latitudeScale = Math.cos(point[0] * Math.PI / 180);
+  const pointXY = [point[1] * latitudeScale, point[0]];
+  const startXY = [start[1] * latitudeScale, start[0]];
+  const endXY = [end[1] * latitudeScale, end[0]];
+  const dx = endXY[0] - startXY[0];
+  const dy = endXY[1] - startXY[1];
+  const lengthSquared = dx * dx + dy * dy;
+  const ratio = lengthSquared ? Math.max(0, Math.min(1, ((pointXY[0] - startXY[0]) * dx + (pointXY[1] - startXY[1]) * dy) / lengthSquared)) : 0;
+  return [start[0] + (end[0] - start[0]) * ratio, start[1] + (end[1] - start[1]) * ratio];
+}
+function findNearestPathPoint(coords) {
+  const candidateLines = [];
+  if (activeRoutePolyline) candidateLines.push(activeRoutePolyline.getLatLngs().map((point) => [point.lat, point.lng]));
+  if (!candidateLines.length && isNavigationActive) pathways.forEach((path) => candidateLines.push(path.points));
+  let nearestPoint = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  candidateLines.forEach((line) => line.slice(0, -1).forEach((start, index) => {
+    const end = line[index + 1];
+    const projected = projectPointToSegment(coords, start, end);
+    const distance = L.latLng(coords[0], coords[1]).distanceTo(L.latLng(projected[0], projected[1]));
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestPoint = projected;
+    }
+  }));
+  return nearestDistance <= SNAP_DISTANCE_METERS ? nearestPoint : coords;
+}
+function scheduleGpsRecovery() {
+  if (gpsRecoveryTimer) clearTimeout(gpsRecoveryTimer);
+  if (!isNavigationActive) return;
+  gpsRecoveryTimer = setTimeout(() => setGpsStatus('Improving GPS accuracy...'), 5000);
+}
 function acceptPosition(position, { recenter = false, force = false } = {}) {
   const accuracy = Number(position.coords.accuracy);
   lastKnownAccuracy = Number.isFinite(accuracy) ? accuracy : Number.POSITIVE_INFINITY;
-  if (lastKnownAccuracy > 15) {
+  if (lastKnownAccuracy > GPS_ACCURACY_LIMIT_METERS) {
     setGpsStatus(true);
     return false;
   }
@@ -621,8 +665,14 @@ function acceptPosition(position, { recenter = false, force = false } = {}) {
   if (!force && previousCoords && !moving) return false;
   lastAcceptedCoords = coords;
   lastAcceptedTimestamp = now;
-  currentCoords = coords;
-  if (userMarker) animateUserMarker(coords);
+  smoothedCoords = smoothedCoords
+    ? [
+      smoothedCoords[0] + (coords[0] - smoothedCoords[0]) * EMA_ALPHA,
+      smoothedCoords[1] + (coords[1] - smoothedCoords[1]) * EMA_ALPHA
+    ]
+    : coords;
+  currentCoords = isNavigationActive ? findNearestPathPoint(smoothedCoords) : smoothedCoords;
+  if (userMarker) animateUserMarker(currentCoords);
   updateCurrentLocation(position, recenter, true);
   if (moving && previousCoords) {
     const bearing = calculateBearingDegrees(previousCoords, coords);
@@ -633,6 +683,7 @@ function acceptPosition(position, { recenter = false, force = false } = {}) {
     setUserMarkerHeading(heading);
   }
   setGpsStatus(false);
+  scheduleGpsRecovery();
   return true;
 }
 function startContinuousLocationTracking() {
@@ -709,6 +760,7 @@ function startInAppNavigation(targetLat, targetLng) {
   }
   isNavigationActive = true;
   renderPathways();
+  scheduleGpsRecovery();
   let routeNeedsGpsRefresh = !currentCoords;
   let lastRoutedCoords = currentCoords ? [...currentCoords] : null;
   startNavigation(currentCoords?.[0] || campus[0], currentCoords?.[1] || campus[1], targetLat, targetLng, selectedPlace?.name || 'destination');
@@ -773,7 +825,7 @@ startNavButton?.addEventListener('click', () => {
 });
 document.getElementById('zoomIn').addEventListener('click', () => { triggerVibration('tap'); map.zoomIn(); announceForA11y('Zoomed in'); }); document.getElementById('zoomOut').addEventListener('click', () => { triggerVibration('tap'); map.zoomOut(); announceForA11y('Zoomed out'); });
 let userMarker;
-function updateCurrentLocation(position, centerMap = true, alreadyAccepted = false) { if (!alreadyAccepted && !acceptPosition(position, { recenter: centerMap, force: true })) return; currentCoords = [position.coords.latitude, position.coords.longitude]; const coordinateLabel = document.getElementById('locationCoordinates'); if (userMarker) { if (!alreadyAccepted) animateUserMarker(currentCoords); } else userMarker = L.marker(currentCoords, { icon: L.divIcon({ className: 'user-location-marker', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] }) }).addTo(map).bindTooltip('You are here'); if (centerMap) map.flyTo(currentCoords, 17); if (coordinateLabel) coordinateLabel.textContent = `${currentCoords[0].toFixed(5)}° N · ${currentCoords[1].toFixed(5)}° E`; }
+function updateCurrentLocation(position, centerMap = true, alreadyAccepted = false) { if (!alreadyAccepted && !acceptPosition(position, { recenter: centerMap, force: true })) return; if (!alreadyAccepted) currentCoords = [position.coords.latitude, position.coords.longitude]; const coordinateLabel = document.getElementById('locationCoordinates'); if (userMarker) { if (!alreadyAccepted) animateUserMarker(currentCoords); } else userMarker = L.marker(currentCoords, { icon: L.divIcon({ className: 'user-location-marker', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] }) }).addTo(map).bindTooltip('You are here'); if (centerMap) map.flyTo(currentCoords, 17); if (coordinateLabel) coordinateLabel.textContent = `${currentCoords[0].toFixed(5)}° N · ${currentCoords[1].toFixed(5)}° E`; }
 function requestLocation(centerMap = true) { if (!navigator.geolocation) return showToast('Location is not supported by this browser.'); announceForA11y('Requesting your location'); showToast('Requesting your location...'); startLocationRequest((position) => { hideToast(); if (!acceptPosition(position, { recenter: centerMap, force: true })) { startContinuousLocationTracking(); showToast('Searching for precise GPS...'); return; } startContinuousLocationTracking(); triggerVibration('success'); announceForA11y('Location found'); showToast('Your location is shown on the map.'); }, (error) => { hideToast(); triggerVibration('error'); const message = error.code === error.PERMISSION_DENIED ? 'Location permission denied. Enable GPS permissions to show your position.' : error.code === error.POSITION_UNAVAILABLE ? 'GPS signal unavailable. Check that location services are enabled.' : 'Location request timed out. Please try again.'; announceForA11y(message); showToast(message); }); }
 document.getElementById('locateButton').addEventListener('click', () => { triggerVibration('tap'); requestLocation(); });
 const locationDialog = document.getElementById('locationDialog');
