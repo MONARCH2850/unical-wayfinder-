@@ -1,29 +1,33 @@
 [
   {
+    "id": "goldie-gate",
     "name": "Goldie Gate",
-    "latitude": 4.9517,
-    "longitude": 8.3428,
+    "lat": 4.9517,
+    "lng": 8.3428,
     "category": "Gate",
     "description": "Main pedestrian entrance to the University of Calabar campus."
   },
   {
+    "id": "main-gate",
     "name": "Main Gate",
-    "latitude": 4.9511,
-    "longitude": 8.3452,
+    "lat": 4.9511,
+    "lng": 8.3452,
     "category": "Gate",
     "description": "Primary vehicle entrance to the University of Calabar campus."
   },
   {
+    "id": "cafeteria",
     "name": "Cafeteria",
-    "latitude": 4.9516,
-    "longitude": 8.3470,
+    "lat": 4.9516,
+    "lng": 8.3470,
     "category": "Food",
     "description": "Campus cafeteria and student dining area."
   },
   {
+    "id": "malabor-hostel-hall-5",
     "name": "Malabor Hostel Hall 5",
-    "latitude": 4.9542,
-    "longitude": 8.3496,
+    "lat": 4.9542,
+    "lng": 8.3496,
     "category": "Hostel",
     "description": "Malabor student residence, Hall 5."
   }

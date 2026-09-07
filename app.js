@@ -488,7 +488,7 @@ L.geoJSON({
 }, { fillColor: '#000000', fillOpacity: 0.6, stroke: true, color: '#1e3d2f', weight: 2 }).addTo(map);
 const markerLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
-const pinIcon = L.divIcon({ className: 'campus-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9] });
+const pinIcon = L.divIcon({ className: 'campus-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 17], popupAnchor: [0, -17] });
 places.forEach((place) => { place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, { direction: 'top', offset: [0, -8] }); });
 const pathways = [
   { points: [[5.0347,8.3348],[5.0352,8.3360],[5.0355,8.3388],[5.0364,8.3393],[5.0392,8.3390]], className: 'main-path', stepFree: true },
