@@ -34,7 +34,7 @@ function setNavigationPreference(name, enabled) {
   renderPathways();
   if (isNavigationActive && selectedPlace) {
     routeLayer.clearLayers();
-    calculateRoute(selectedPlace);
+    startNavigation(currentCoords?.[0] || campus[0], currentCoords?.[1] || campus[1], selectedPlace.coords[0], selectedPlace.coords[1], selectedPlace.name);
   }
   localStorage.setItem('unical_navigation_preferences', JSON.stringify(navigationPreferences));
   announceForA11y(`${name} ${enabled ? 'enabled' : 'disabled'}`);
@@ -488,6 +488,7 @@ L.geoJSON({
 }, { fillColor: '#000000', fillOpacity: 0.6, stroke: true, color: '#1e3d2f', weight: 2 }).addTo(map);
 const markerLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
+let activeRoutePolyline = null;
 const pinIcon = L.divIcon({ className: 'campus-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 17], popupAnchor: [0, -17] });
 places.forEach((place) => { place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, { direction: 'top', offset: [0, -8] }); });
 const pathways = [
@@ -507,7 +508,7 @@ function renderPathways() {
   if (!isNavigationActive) return;
   pathways.forEach((path) => {
     if (navigationPreferences.stepFree && !path.stepFree) return;
-    L.polyline(path.points, { color: path.stepFree ? '#55b779' : '#e47b56', weight: path.className === 'main-path' ? 5 : 3, opacity: .9, dashArray: path.className === 'quiet-path' ? '7 7' : null, lineCap: 'round' }).addTo(pathwayLayer);
+    L.polyline(path.points, { color: path.stepFree ? '#55b779' : '#e47b56', weight: 2.5, opacity: .8, dashArray: path.className === 'quiet-path' ? '4, 6' : null, lineCap: 'round' }).addTo(pathwayLayer);
   });
 }
 const placeList = document.getElementById('placeList');
@@ -527,12 +528,49 @@ function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; do
 places.forEach((place) => { addPlaceButton(place); });
 document.getElementById('placeCount').textContent = `${String(places.length).padStart(2, '0')} PLACES`;
 destinationInput.addEventListener('input', () => { const query = destinationInput.value.toLowerCase().trim(); searchResults.innerHTML = ''; if (!query) return; const matches = places.filter((place) => `${place.name} ${place.type}`.toLowerCase().includes(query)); if (!matches.length) { const result = document.createElement('div'); result.className = 'search-result search-empty'; result.textContent = 'No places found'; searchResults.appendChild(result); return; } matches.forEach((place) => { const result = document.createElement('button'); result.type = 'button'; result.className = 'search-result'; result.textContent = place.name; result.addEventListener('click', () => { destinationInput.value = place.name; searchResults.innerHTML = ''; selectPlace(place); }); searchResults.appendChild(result); }); });
-document.getElementById('clearRoute').addEventListener('click', () => { triggerVibration('tap'); routePanel.hidden = true; routeLayer.clearLayers(); isNavigationActive = false; renderPathways(); document.querySelectorAll('.place-item').forEach((item) => item.classList.remove('active')); announceForA11y('Route cleared'); speakCue('Route cleared'); map.flyTo(campus, 16); selectedPlace = null; if (navigationWatchId !== null) { navigator.geolocation.clearWatch(navigationWatchId); navigationWatchId = null; } setNavigationButtonState(false); exitWebARView(); });
+document.getElementById('clearRoute').addEventListener('click', () => { triggerVibration('tap'); stopNavigation(); routePanel.hidden = true; document.querySelectorAll('.place-item').forEach((item) => item.classList.remove('active')); announceForA11y('Route cleared'); speakCue('Route cleared'); map.flyTo(campus, 16); selectedPlace = null; if (navigationWatchId !== null) { navigator.geolocation.clearWatch(navigationWatchId); navigationWatchId = null; } exitWebARView(); });
 const startNavButton = document.getElementById('start-nav-btn') || document.getElementById('startRoute');
 function setNavigationButtonState(isTracking) {
   if (!startNavButton) return;
   startNavButton.innerHTML = isTracking ? '🛑 Stop Navigation <span>▣</span>' : 'Start navigation <span>→</span>';
   startNavButton.setAttribute('aria-label', isTracking ? 'Stop navigation to destination' : 'Start navigation to destination');
+}
+function stopNavigation() {
+  if (activeRoutePolyline) {
+    map.removeLayer(activeRoutePolyline);
+    activeRoutePolyline = null;
+  }
+  routeLayer.clearLayers();
+  isNavigationActive = false;
+  renderPathways();
+  if (selectedPlace) routeMeta.textContent = `${selectedPlace.type.split(' · ')[0]} · ready to navigate`;
+  setNavigationButtonState(false);
+}
+async function startNavigation(userLat, userLng, destLat, destLng, destName) {
+  const origin = [Number(userLat), Number(userLng)];
+  const destination = [Number(destLat), Number(destLng)];
+  const routeColor = '#1B5E20';
+  const routeUrl = `https://router.project-osrm.org/route/v1/foot/${origin[1]},${origin[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson`;
+
+  if (activeRoutePolyline) map.removeLayer(activeRoutePolyline);
+  activeRoutePolyline = null;
+  try {
+    const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
+    let response = apiBase ? await fetch(`${apiBase}/api/routes/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: destination, accessibility_mode: navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'step_free' : null }) }) : null;
+    if (!response || !response.ok) response = await fetch(routeUrl);
+    if (!response.ok) throw new Error('route unavailable');
+    const data = await response.json();
+    const route = data.routes?.[0] || data;
+    const routePoints = route.geometry?.coordinates?.map(([longitude, latitude]) => [latitude, longitude]) || route.coordinates;
+    if (!routePoints?.length) throw new Error('route unavailable');
+    activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
+    map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+    routeMeta.textContent = `Active navigation · walking to ${destName}`;
+  } catch {
+    activeRoutePolyline = L.polyline([origin, destination], { color: routeColor, weight: 4, opacity: .9, dashArray: '4, 6', lineCap: 'round' }).addTo(map);
+    map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+    routeMeta.textContent = `Active navigation · direct route to ${destName}`;
+  }
 }
 function startInAppNavigation(targetLat, targetLng) {
   if (!navigator.geolocation) {
@@ -543,10 +581,7 @@ function startInAppNavigation(targetLat, targetLng) {
   if (navigationWatchId !== null) {
     navigator.geolocation.clearWatch(navigationWatchId);
     navigationWatchId = null;
-    isNavigationActive = false;
-    renderPathways();
-    routeLayer.clearLayers();
-    setNavigationButtonState(false);
+    stopNavigation();
     showToast('Navigation stopped.');
     announceForA11y('Navigation stopped');
     speakCue('Navigation stopped');
@@ -561,8 +596,8 @@ function startInAppNavigation(targetLat, targetLng) {
   triggerVibration('success');
   isNavigationActive = true;
   renderPathways();
-  routeLayer.clearLayers();
-  calculateRoute(selectedPlace);
+  let routeNeedsGpsRefresh = !currentCoords;
+  startNavigation(currentCoords?.[0] || campus[0], currentCoords?.[1] || campus[1], targetLat, targetLng, selectedPlace?.name || 'destination');
   setNavigationButtonState(true);
 
   const updateTrackingPosition = (position) => {
@@ -570,6 +605,10 @@ function startInAppNavigation(targetLat, targetLng) {
     const lng = position.coords.longitude;
     currentCoords = [lat, lng];
     updateCurrentLocation({ coords: { latitude: lat, longitude: lng } }, false);
+    if (routeNeedsGpsRefresh && selectedPlace) {
+      routeNeedsGpsRefresh = false;
+      startNavigation(lat, lng, targetLat, targetLng, selectedPlace.name);
+    }
     map.panTo([lat, lng], { animate: true, duration: 0.75 });
     const statusText = document.getElementById('statusText');
     if (statusText) statusText.textContent = 'In-app navigation active';
@@ -604,7 +643,7 @@ function startInAppNavigation(targetLat, targetLng) {
     speakCue(errorMessage);
     navigator.geolocation.clearWatch(navigationWatchId);
     navigationWatchId = null;
-    setNavigationButtonState(false);
+    stopNavigation();
   };
 
   navigationWatchId = navigator.geolocation.watchPosition(updateTrackingPosition, handleTrackingError, {
@@ -622,34 +661,6 @@ let userMarker;
 function updateCurrentLocation(position, centerMap = true) { currentCoords = [position.coords.latitude, position.coords.longitude]; const coordinateLabel = document.getElementById('locationCoordinates'); if (userMarker) userMarker.setLatLng(currentCoords); else userMarker = L.marker(currentCoords, { icon: L.divIcon({ className: 'user-location-marker', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] }) }).addTo(map).bindTooltip('You are here'); if (centerMap) map.flyTo(currentCoords, 17); document.getElementById('statusText').textContent = 'Live location enabled'; if (coordinateLabel) coordinateLabel.textContent = `${currentCoords[0].toFixed(5)}° N · ${currentCoords[1].toFixed(5)}° E`; }
 function requestLocation(centerMap = true) { if (!navigator.geolocation) return showToast('Location is not supported by this browser.'); announceForA11y('Requesting your location'); showToast('Requesting your location...'); navigator.geolocation.getCurrentPosition((position) => { updateCurrentLocation(position, centerMap); triggerVibration('success'); announceForA11y('Location found'); showToast('Your location is shown on the map.'); }, () => { triggerVibration('error'); announceForA11y('Location permission denied'); showToast('Location permission was not granted.'); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); }
 document.getElementById('locateButton').addEventListener('click', () => { triggerVibration('tap'); requestLocation(); });
-async function calculateRoute(place) {
-  const origin = currentCoords || campus;
-  const routeColor = navigationPreferences.stepFree || navigationPreferences.wheelchair ? '#55b779' : '#e47b56';
-  const accessibilityQuery = navigationPreferences.stepFree || navigationPreferences.wheelchair ? '&accessibility_mode=step_free' : '';
-  const apiBase = window.UNICAL_API_BASE || '';
-  try {
-    let response = apiBase ? await fetch(`${apiBase}/api/routes/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: place.coords, accessibility_mode: navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'step_free' : null }) }) : null;
-    if (!response || !response.ok) {
-      const url = `https://router.project-osrm.org/route/v1/foot/${origin[1]},${origin[0]};${place.coords[1]},${place.coords[0]}?overview=full&geometries=geojson${accessibilityQuery}`;
-      response = await fetch(url);
-    }
-    if (!response.ok) throw new Error('route unavailable');
-    const data = await response.json();
-    const route = data.routes?.[0] || data;
-    const routePoints = route.geometry?.coordinates?.map(([longitude, latitude]) => [latitude, longitude]) || route.coordinates;
-    if (!routePoints?.length) throw new Error('route unavailable');
-    L.polyline(routePoints, { color: routeColor, weight: 5, opacity: .95, lineCap: 'round' }).addTo(routeLayer);
-    const distance = Number(route.distance || 0);
-    const duration = Number(route.duration || route.total_time || 0);
-    routeMeta.textContent = `${navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'Step-free' : 'Walking'} route · ${Math.max(1, Math.round(duration / 60))} min · ${(distance / 1000).toFixed(1)} km`;
-  } catch {
-    const fallback = navigationPreferences.stepFree || navigationPreferences.wheelchair
-      ? pathways.find((path) => path.stepFree)?.points || [origin, place.coords]
-      : [origin, place.coords];
-    L.polyline(fallback, { color: routeColor, weight: 4, dashArray: '4 8', opacity: .9 }).addTo(routeLayer);
-    routeMeta.textContent = `${navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'Step-free' : 'Walking'} route preview · route service unavailable`;
-  }
-}
 const locationDialog = document.getElementById('locationDialog');
 let pendingCoords;
 let currentCapturedCoords;
