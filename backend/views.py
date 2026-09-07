@@ -1,5 +1,10 @@
 import heapq
 import math
+import os
+import json
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from django.db import transaction
 from django.contrib.auth import get_user_model
 from rest_framework import permissions, status
@@ -41,6 +46,59 @@ def locations(request):
         latitude, longitude = map(float, request.query_params['near'].split(','))
         queryset = sorted(queryset, key=lambda place: distance((latitude, longitude), (place.latitude, place.longitude)))
     return Response(LocationSerializer(queryset, many=True).data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def google_directions(request):
+    start = request.data.get('start')
+    end = request.data.get('end')
+    if not isinstance(start, list) or not isinstance(end, list) or len(start) != 2 or len(end) != 2:
+        return Response({'detail': 'start and end must be [latitude, longitude].'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        start_latitude, start_longitude = map(float, start)
+        end_latitude, end_longitude = map(float, end)
+    except (TypeError, ValueError):
+        return Response({'detail': 'start and end coordinates must be numeric.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not all(-90 <= latitude <= 90 for latitude in (start_latitude, end_latitude)) or not all(-180 <= longitude <= 180 for longitude in (start_longitude, end_longitude)):
+        return Response({'detail': 'Coordinates are outside valid geographic bounds.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    api_key = os.environ.get('GOOGLE_MAPS_API_KEY')
+    if not api_key:
+        return Response({'detail': 'Google Directions is not configured on the backend.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    query = urlencode({
+        'origin': f'{start_latitude},{start_longitude}',
+        'destination': f'{end_latitude},{end_longitude}',
+        'mode': 'walking',
+        'overview': 'full',
+        'key': api_key,
+    })
+    request_url = f'https://maps.googleapis.com/maps/api/directions/json?{query}'
+    try:
+        with urlopen(Request(request_url, headers={'Accept': 'application/json'}), timeout=10) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return Response({'detail': 'Google Directions is temporarily unavailable.'}, status=status.HTTP_502_BAD_GATEWAY)
+
+    if payload.get('status') != 'OK' or not payload.get('routes'):
+        return Response({'detail': payload.get('error_message') or f"Google Directions returned {payload.get('status', 'UNKNOWN')}."}, status=status.HTTP_502_BAD_GATEWAY)
+    route = payload['routes'][0]
+    leg = route.get('legs', [{}])[0]
+    return Response({
+        'overview_polyline': route.get('overview_polyline', {}).get('points', ''),
+        'distance': leg.get('distance', {}),
+        'duration': leg.get('duration', {}),
+        'steps': [
+            {
+                'html_instructions': step.get('html_instructions', ''),
+                'distance': step.get('distance', {}),
+                'duration': step.get('duration', {}),
+                'polyline': step.get('polyline', {}).get('points', ''),
+            }
+            for step in leg.get('steps', [])
+        ],
+    })
 
 
 @api_view(['POST'])

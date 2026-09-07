@@ -7,6 +7,7 @@ urlpatterns = [
     path('api/spots/', views.locations),
     path('api/locations/', views.locations),
     path('api/spots/sync/', views.sync_spots),
+    path('api/google-directions/', views.google_directions),
     path('api/routes/', views.routes),
     path('api/live-location/', views.live_location),
     path('api/accessibility/', views.accessibility),

@@ -556,6 +556,8 @@ function stopNavigation() {
     activeRoutePolyline = null;
   }
   routeLayer.clearLayers();
+  const stepsElement = document.getElementById('navigationSteps');
+  if (stepsElement) stepsElement.hidden = true;
   isNavigationActive = false;
   renderPathways();
   if (navigationWatchId !== null) {
@@ -706,6 +708,55 @@ function startLocationRequest(onPosition, onError) {
     onError(error);
   }, INITIAL_GPS_OPTIONS);
 }
+function decodeGooglePolyline(encoded) {
+  const points = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    latitude += (result & 1) ? ~(result >> 1) : result >> 1;
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    longitude += (result & 1) ? ~(result >> 1) : result >> 1;
+    points.push([latitude / 1e5, longitude / 1e5]);
+  }
+  return points;
+}
+function renderNavigationSteps(steps = []) {
+  let stepsElement = document.getElementById('navigationSteps');
+  if (!stepsElement) {
+    stepsElement = document.createElement('ol');
+    stepsElement.id = 'navigationSteps';
+    stepsElement.className = 'navigation-steps';
+    routePanel.appendChild(stepsElement);
+  }
+  stepsElement.innerHTML = '';
+  steps.slice(0, 8).forEach((step) => {
+    const item = document.createElement('li');
+    const instruction = document.createElement('span');
+    const distance = document.createElement('small');
+    const parsedInstruction = document.createElement('span');
+    parsedInstruction.innerHTML = step.html_instructions || 'Continue along the route.';
+    instruction.textContent = parsedInstruction.textContent;
+    distance.textContent = step.distance?.text || '';
+    item.append(instruction, distance);
+    stepsElement.appendChild(item);
+  });
+  stepsElement.hidden = !steps.length;
+}
 async function startNavigation(userLat, userLng, destLat, destLng, destName) {
   const origin = [Number(userLat), Number(userLng)];
   const destination = [Number(destLat), Number(destLng)];
@@ -716,7 +767,18 @@ async function startNavigation(userLat, userLng, destLat, destLng, destName) {
   activeRoutePolyline = null;
   try {
     const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
-    let response = apiBase ? await fetch(`${apiBase}/api/routes/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: destination, accessibility_mode: navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'step_free' : null }) }) : null;
+    let response = apiBase ? await fetch(`${apiBase}/api/google-directions/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: destination }) }) : null;
+    if (response?.ok) {
+      const googleRoute = await response.json();
+      const routePoints = decodeGooglePolyline(googleRoute.overview_polyline || '');
+      if (!routePoints.length) throw new Error('Google route geometry unavailable');
+      activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
+      map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+      renderNavigationSteps(googleRoute.steps);
+      routeMeta.textContent = `Active navigation · walking to ${destName}`;
+      return;
+    }
+    response = apiBase ? await fetch(`${apiBase}/api/routes/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: destination, accessibility_mode: navigationPreferences.stepFree || navigationPreferences.wheelchair ? 'step_free' : null }) }) : null;
     if (!response || !response.ok) response = await fetch(routeUrl);
     if (!response.ok) throw new Error('route unavailable');
     const data = await response.json();
@@ -725,10 +787,12 @@ async function startNavigation(userLat, userLng, destLat, destLng, destName) {
     if (!routePoints?.length) throw new Error('route unavailable');
     activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
     map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+    renderNavigationSteps();
     routeMeta.textContent = `Active navigation · walking to ${destName}`;
   } catch {
     activeRoutePolyline = L.polyline([origin, destination], { color: routeColor, weight: 4, opacity: .9, dashArray: '4, 6', lineCap: 'round' }).addTo(map);
     map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+    renderNavigationSteps();
     routeMeta.textContent = `Active navigation · direct route to ${destName}`;
   }
 }
