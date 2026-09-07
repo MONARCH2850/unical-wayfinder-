@@ -1,3 +1,5 @@
+window.UNICAL_API_BASE = 'https://disk-policy-quantum.ngrok-free.dev';
+
 const campus = [5.0363, 8.3362];
 let isAccessibilityModeActive = false;
 const navigationPreferences = {
