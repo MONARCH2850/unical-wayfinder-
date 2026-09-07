@@ -1,6 +1,6 @@
 window.UNICAL_API_BASE = 'https://disk-policy-quantum.ngrok-free.dev';
 
-const campus = [5.0363, 8.3362];
+const campus = [4.9510, 8.3450];
 let isAccessibilityModeActive = false;
 const navigationPreferences = {
   wheelchair: false,
@@ -491,10 +491,14 @@ const routeLayer = L.layerGroup().addTo(map);
 const pinIcon = L.divIcon({ className: 'campus-pin', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 17], popupAnchor: [0, -17] });
 places.forEach((place) => { place.marker = L.marker(place.coords, { icon: pinIcon }).addTo(markerLayer).bindTooltip(place.name, { direction: 'top', offset: [0, -8] }); });
 const pathways = [
-  { points: [[5.0347,8.3348],[5.0352,8.3360],[5.0355,8.3388],[5.0364,8.3393],[5.0392,8.3390]], className: 'main-path', stepFree: true },
-  { points: [[5.0347,8.3348],[5.0334,8.3370],[5.0325,8.3391]], className: 'quiet-path', stepFree: false },
-  { points: [[5.0364,8.3393],[5.0373,8.3375],[5.0382,8.3327]], className: 'main-path', stepFree: true },
-  { points: [[5.0352,8.3360],[5.0368,8.3351],[5.0380,8.3355],[5.0392,8.3390]], className: 'quiet-path', stepFree: true }
+  { points: [[4.9461,8.3432],[4.9465,8.3445],[4.9469,8.3460],[4.9464,8.3470]], className: 'main-path', stepFree: true },
+  { points: [[4.9469,8.3460],[4.9475,8.3452],[4.9483,8.3478]], className: 'quiet-path', stepFree: true },
+  { points: [[4.9483,8.3478],[4.9482,8.3486],[4.9486,8.3483],[4.9493,8.3499]], className: 'quiet-path', stepFree: true },
+  { points: [[4.9493,8.3499],[4.9495,8.3499],[4.9512,8.3498],[4.9502,8.3517]], className: 'main-path', stepFree: true },
+  { points: [[4.9502,8.3517],[4.9492,8.3515],[4.9487,8.3521],[4.9490,8.3525]], className: 'quiet-path', stepFree: true },
+  { points: [[4.9490,8.3525],[4.9499,8.3537],[4.9504,8.3531]], className: 'main-path', stepFree: true },
+  { points: [[4.9511,8.3452],[4.9507,8.3468],[4.9493,8.3499]], className: 'main-path', stepFree: true },
+  { points: [[4.9475,8.3452],[4.9469,8.3460],[4.9482,8.3486]], className: 'quiet-path', stepFree: false }
 ];
 const pathwayLayer = L.layerGroup().addTo(map);
 function renderPathways() {
