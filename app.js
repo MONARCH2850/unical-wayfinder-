@@ -265,33 +265,90 @@ function persistPlaces() {
 function placeKey(name, lat, lng) {
   return `${String(name).trim().toLowerCase()}|${Number(lat).toFixed(6)}|${Number(lng).toFixed(6)}`;
 }
+function getQueuedSpots() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TAGGED_SPOTS_KEY) || '[]');
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+function normalizeSpot(spot) {
+  if (!spot || !spot.name) return null;
+  const coords = Array.isArray(spot.coords) ? spot.coords : [spot.latitude ?? spot.lat, spot.longitude ?? spot.lng];
+  const lat = Number(coords[0]);
+  const lng = Number(coords[1]);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return {
+    name: String(spot.name).trim(),
+    lat,
+    lng,
+    type: spot.type || spot.feature_type || 'Saved • custom',
+    description: spot.description || ''
+  };
+}
+function uniqueSpots(spots) {
+  const seen = new Set();
+  return spots.map(normalizeSpot).filter(Boolean).filter((spot) => {
+    const key = placeKey(spot.name, spot.lat, spot.lng);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function getLocalSpots() {
+  return uniqueSpots([...getStoredPlaces(), ...getQueuedSpots()]);
+}
+function renderSpots(spots) {
+  const placeListEl = document.getElementById('placeList');
+  if (!placeListEl) return;
+
+  markerLayer.clearLayers();
+  places = [];
+  placeListEl.innerHTML = '';
+  spots.forEach((spot) => {
+    const place = buildSavedPlace(spot.name, spot.lat, spot.lng, spot.type, spot.description);
+    places.push(place);
+    addPlaceMarker(place);
+    addPlaceButton(place);
+  });
+
+  if (!places.length) renderEmptyPlaceState();
+  document.getElementById('placeCount').textContent = `${String(document.querySelectorAll('.place-item').length).padStart(2, '0')} PLACES`;
+}
+async function fetchSpotList(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Spot request failed with status ${response.status}.`);
+  const data = await response.json();
+  const spots = Array.isArray(data) ? data : data.spots;
+  if (!Array.isArray(spots)) throw new Error('Spot response was not a list.');
+  return uniqueSpots(spots);
+}
 async function pullPlacesFromBackend() {
   const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
-  if (!apiBase) return;
+  const localSpots = getLocalSpots();
+
+  if (apiBase) {
+    try {
+      const databaseSpots = await fetchSpotList(window.UNICAL_SPOTS_URL || `${apiBase}/api/locations/`);
+      const merged = uniqueSpots([...databaseSpots, ...localSpots]);
+      localStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(merged.map((spot) => ({ name: spot.name, lat: spot.lat, lng: spot.lng }))));
+      renderSpots(merged);
+      return;
+    } catch (error) {
+      console.warn('Could not load spots from the backend:', error);
+    }
+  }
 
   try {
-    const response = await fetch(`${apiBase}/api/locations/`);
-    if (!response.ok) throw new Error('The backend rejected the places request.');
-    const remotePlaces = await response.json();
-    if (!Array.isArray(remotePlaces)) return;
-
-    const merged = getStoredPlaces();
-    const knownPlaces = new Set(merged.map((place) => placeKey(place.name, place.lat, place.lng)));
-    remotePlaces.forEach((place) => {
-      const lat = Number(place.latitude);
-      const lng = Number(place.longitude);
-      if (!place.name || Number.isNaN(lat) || Number.isNaN(lng)) return;
-      const key = placeKey(place.name, lat, lng);
-      if (knownPlaces.has(key)) return;
-      knownPlaces.add(key);
-      merged.push({ name: String(place.name).trim(), lat, lng });
-    });
-
-    localStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(merged));
-    renderSavedPlacesFromStorage();
+    const campusSpots = await fetchSpotList('./spots.json');
+    renderSpots(uniqueSpots([...campusSpots, ...localSpots]));
+    return;
   } catch (error) {
-    console.warn('Could not load shared places:', error);
+    console.warn('Could not load static campus spots:', error);
   }
+
+  renderSpots(localSpots);
 }
 function queueTaggedSpot({ name, lat, lng, featureType = '', isAccessible = false }) {
   let queuedSpots = [];
@@ -367,22 +424,7 @@ function addPlaceMarker(place) {
   });
 }
 function renderSavedPlacesFromStorage() {
-  const saved = getStoredPlaces();
-  const placeListEl = document.getElementById('placeList');
-  if (!placeListEl) return;
-
-  markerLayer.clearLayers();
-  places = [];
-  placeListEl.innerHTML = '';
-  saved.forEach((entry) => {
-    const place = buildSavedPlace(entry.name, entry.lat, entry.lng, 'Saved • custom', '');
-    places.push(place);
-    addPlaceMarker(place);
-    addPlaceButton(place);
-  });
-
-  if (!places.length) renderEmptyPlaceState();
-  document.getElementById('placeCount').textContent = `${String(document.querySelectorAll('.place-item').length).padStart(2, '0')} PLACES`;
+  renderSpots(getLocalSpots());
 }
 document.addEventListener('DOMContentLoaded', async () => {
   renderSavedPlacesFromStorage();
