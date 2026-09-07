@@ -466,14 +466,23 @@ const map = L.map('map', {
 });
 const topPanel = document.getElementById('top-panel');
 const topPanelToggle = document.getElementById('top-panel-toggle');
+const floatingControls = document.querySelector('.map-floating-controls');
+function updateFloatingControlsOffset() {
+  if (!floatingControls || !topPanel) return;
+  const panelBottom = topPanel.classList.contains('is-collapsed') ? 64 : Math.min(topPanel.offsetHeight, window.innerHeight * 0.45);
+  floatingControls.style.top = `${Math.max(panelBottom + 16, window.innerWidth <= 760 ? 88 : 100)}px`;
+}
 topPanelToggle?.addEventListener('click', () => {
   const collapsed = topPanel.classList.toggle('is-collapsed');
   topPanelToggle.setAttribute('aria-expanded', String(!collapsed));
   topPanelToggle.setAttribute('aria-label', collapsed ? 'Expand navigation menu' : 'Collapse navigation menu');
+  updateFloatingControlsOffset();
   window.setTimeout(() => map.invalidateSize(), 300);
 });
+window.addEventListener('resize', updateFloatingControlsOffset);
 window.addEventListener('load', () => map.invalidateSize());
-if (topPanel && typeof ResizeObserver !== 'undefined') new ResizeObserver(() => map.invalidateSize()).observe(topPanel);
+if (topPanel && typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { map.invalidateSize(); updateFloatingControlsOffset(); }).observe(topPanel);
+updateFloatingControlsOffset();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; document.getElementById('installButton').hidden = false; });
 document.getElementById('installButton').addEventListener('click', async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; document.getElementById('installButton').hidden = true; });
