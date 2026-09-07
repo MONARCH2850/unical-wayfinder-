@@ -441,12 +441,14 @@ let currentCoords;
 let selectedPlace;
 let navigationWatchId = null;
 let locationRequestWatchId = null;
+let locationTrackingWatchId = null;
 let lastAcceptedCoords = null;
 let lastAcceptedTimestamp = 0;
 let markerAnimationFrame = null;
 let lastKnownAccuracy = Number.POSITIVE_INFINITY;
 const MIN_MOVEMENT_METERS = 2.5;
 const GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 };
+const INITIAL_GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 };
 const map = L.map('map', {
   zoomControl: false,
   center: [4.9510, 8.3450],
@@ -530,7 +532,8 @@ const toast = document.getElementById('locationToast');
   if (input) input.checked = navigationPreferences[name];
   input?.addEventListener('change', () => setNavigationPreference(name, input.checked));
 });
-const showToast = (message) => { toast.textContent = message; toast.hidden = false; window.setTimeout(() => { toast.hidden = true; }, 3500); };
+const hideToast = () => { if (toast) toast.hidden = true; };
+const showToast = (message) => { toast.textContent = message; toast.hidden = false; window.setTimeout(hideToast, 3500); };
 function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; document.querySelectorAll('.place-item').forEach((item) => item.classList.toggle('active', item.dataset.name === place.name)); routeTitle.textContent = place.name; routeMeta.textContent = `${place.type.split(' · ')[0]} · ready to navigate`; routePanel.hidden = false; routeLayer.clearLayers(); announceForA11y(`Selected destination: ${place.name}`); speakCue(`Route to ${place.name}`); map.flyTo(place.coords, 17, { duration: .7 }); }
 places.forEach((place) => { addPlaceButton(place); });
 document.getElementById('placeCount').textContent = `${String(places.length).padStart(2, '0')} PLACES`;
@@ -554,6 +557,7 @@ function stopNavigation() {
     navigator.geolocation.clearWatch(navigationWatchId);
     navigationWatchId = null;
   }
+  startContinuousLocationTracking();
   setGpsStatus(false);
   if (selectedPlace) routeMeta.textContent = `${selectedPlace.type.split(' · ')[0]} · ready to navigate`;
   setNavigationButtonState(false);
@@ -621,6 +625,15 @@ function acceptPosition(position, { recenter = false, force = false } = {}) {
   setGpsStatus(false);
   return true;
 }
+function startContinuousLocationTracking() {
+  if (locationTrackingWatchId !== null || !navigator.geolocation) return;
+  locationTrackingWatchId = navigator.geolocation.watchPosition((position) => {
+    acceptPosition(position);
+  }, (error) => {
+    setGpsStatus(true);
+    if (error.code === error.PERMISSION_DENIED) showToast('Location permission is required to track your position.');
+  }, GPS_OPTIONS);
+}
 function startLocationRequest(onPosition, onError) {
   if (locationRequestWatchId !== null) navigator.geolocation.clearWatch(locationRequestWatchId);
   locationRequestWatchId = navigator.geolocation.watchPosition((position) => {
@@ -630,7 +643,7 @@ function startLocationRequest(onPosition, onError) {
   }, (error) => {
     locationRequestWatchId = null;
     onError(error);
-  }, GPS_OPTIONS);
+  }, INITIAL_GPS_OPTIONS);
 }
 async function startNavigation(userLat, userLng, destLat, destLng, destName) {
   const origin = [Number(userLat), Number(userLng)];
@@ -680,6 +693,10 @@ function startInAppNavigation(targetLat, targetLng) {
   }
 
   triggerVibration('success');
+  if (locationTrackingWatchId !== null) {
+    navigator.geolocation.clearWatch(locationTrackingWatchId);
+    locationTrackingWatchId = null;
+  }
   isNavigationActive = true;
   renderPathways();
   let routeNeedsGpsRefresh = !currentCoords;
@@ -747,7 +764,7 @@ startNavButton?.addEventListener('click', () => {
 document.getElementById('zoomIn').addEventListener('click', () => { triggerVibration('tap'); map.zoomIn(); announceForA11y('Zoomed in'); }); document.getElementById('zoomOut').addEventListener('click', () => { triggerVibration('tap'); map.zoomOut(); announceForA11y('Zoomed out'); });
 let userMarker;
 function updateCurrentLocation(position, centerMap = true, alreadyAccepted = false) { if (!alreadyAccepted && !acceptPosition(position, { recenter: centerMap, force: true })) return; currentCoords = [position.coords.latitude, position.coords.longitude]; const coordinateLabel = document.getElementById('locationCoordinates'); if (userMarker) { if (!alreadyAccepted) animateUserMarker(currentCoords); } else userMarker = L.marker(currentCoords, { icon: L.divIcon({ className: 'user-location-marker', html: '<span></span>', iconSize: [24, 24], iconAnchor: [12, 12] }) }).addTo(map).bindTooltip('You are here'); if (centerMap) map.flyTo(currentCoords, 17); if (coordinateLabel) coordinateLabel.textContent = `${currentCoords[0].toFixed(5)}° N · ${currentCoords[1].toFixed(5)}° E`; }
-function requestLocation(centerMap = true) { if (!navigator.geolocation) return showToast('Location is not supported by this browser.'); announceForA11y('Requesting your location'); showToast('Requesting your location...'); startLocationRequest((position) => { if (!acceptPosition(position, { recenter: centerMap, force: true })) return; triggerVibration('success'); announceForA11y('Location found'); showToast('Your location is shown on the map.'); }, () => { triggerVibration('error'); announceForA11y('Location permission denied'); showToast('Location permission was not granted.'); }); }
+function requestLocation(centerMap = true) { if (!navigator.geolocation) return showToast('Location is not supported by this browser.'); announceForA11y('Requesting your location'); showToast('Requesting your location...'); startLocationRequest((position) => { hideToast(); if (!acceptPosition(position, { recenter: centerMap, force: true })) { startContinuousLocationTracking(); showToast('Searching for precise GPS...'); return; } startContinuousLocationTracking(); triggerVibration('success'); announceForA11y('Location found'); showToast('Your location is shown on the map.'); }, (error) => { hideToast(); triggerVibration('error'); const message = error.code === error.PERMISSION_DENIED ? 'Location permission denied. Enable GPS permissions to show your position.' : error.code === error.POSITION_UNAVAILABLE ? 'GPS signal unavailable. Check that location services are enabled.' : 'Location request timed out. Please try again.'; announceForA11y(message); showToast(message); }); }
 document.getElementById('locateButton').addEventListener('click', () => { triggerVibration('tap'); requestLocation(); });
 const locationDialog = document.getElementById('locationDialog');
 let pendingCoords;
@@ -772,11 +789,13 @@ function addLocationAtCurrentGPS() {
     const coords = [position.coords.latitude, position.coords.longitude];
     btn.innerHTML = originalText;
     btn.disabled = false;
+    hideToast();
     if (!acceptPosition(position, { force: true }) || !unicalCampusOnlyBounds.contains(coords)) {
       const errMsg = 'Unable to get a precise campus location. Please try again.';
       alert(errMsg);
       return;
     }
+    startContinuousLocationTracking();
     triggerVibration('success');
     speakCue('Location acquired. Opening form');
     announceForA11y('GPS location acquired. Ready to save');
