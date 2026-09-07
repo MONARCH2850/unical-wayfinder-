@@ -448,6 +448,7 @@ let markerAnimationFrame = null;
 let lastKnownAccuracy = Number.POSITIVE_INFINITY;
 let smoothedCoords = null;
 let gpsRecoveryTimer = null;
+let locationRetryTimer = null;
 const MIN_MOVEMENT_METERS = 3;
 const GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 };
 const INITIAL_GPS_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 };
@@ -560,10 +561,7 @@ function stopNavigation() {
   if (stepsElement) stepsElement.hidden = true;
   isNavigationActive = false;
   renderPathways();
-  if (navigationWatchId !== null) {
-    navigator.geolocation.clearWatch(navigationWatchId);
-    navigationWatchId = null;
-  }
+  clearLocationWatch('navigationWatchId');
   if (gpsRecoveryTimer) {
     clearTimeout(gpsRecoveryTimer);
     gpsRecoveryTimer = null;
@@ -693,12 +691,33 @@ function startContinuousLocationTracking() {
   locationTrackingWatchId = navigator.geolocation.watchPosition((position) => {
     acceptPosition(position);
   }, (error) => {
+    locationTrackingWatchId = null;
     setGpsStatus(true);
-    if (error.code === error.PERMISSION_DENIED) showToast('Location permission is required to track your position.');
+    if (error.code === error.PERMISSION_DENIED) {
+      showToast('Location permission is required to track your position.');
+      return;
+    }
+    if (!isNavigationActive && !locationRetryTimer) {
+      locationRetryTimer = setTimeout(() => {
+        locationRetryTimer = null;
+        startContinuousLocationTracking();
+      }, 2000);
+    }
   }, GPS_OPTIONS);
 }
+function clearLocationWatch(name) {
+  const watchId = name === 'navigationWatchId'
+    ? navigationWatchId
+    : name === 'locationRequestWatchId'
+      ? locationRequestWatchId
+      : locationTrackingWatchId;
+  if (watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+  if (name === 'navigationWatchId') navigationWatchId = null;
+  else if (name === 'locationRequestWatchId') locationRequestWatchId = null;
+  else locationTrackingWatchId = null;
+}
 function startLocationRequest(onPosition, onError) {
-  if (locationRequestWatchId !== null) navigator.geolocation.clearWatch(locationRequestWatchId);
+  clearLocationWatch('locationRequestWatchId');
   locationRequestWatchId = navigator.geolocation.watchPosition((position) => {
     navigator.geolocation.clearWatch(locationRequestWatchId);
     locationRequestWatchId = null;
@@ -803,8 +822,7 @@ function startInAppNavigation(targetLat, targetLng) {
   }
 
   if (navigationWatchId !== null) {
-    navigator.geolocation.clearWatch(navigationWatchId);
-    navigationWatchId = null;
+    clearLocationWatch('navigationWatchId');
     stopNavigation();
     showToast('Navigation stopped.');
     announceForA11y('Navigation stopped');
@@ -818,6 +836,7 @@ function startInAppNavigation(targetLat, targetLng) {
   }
 
   triggerVibration('success');
+  clearLocationWatch('locationRequestWatchId');
   if (locationTrackingWatchId !== null) {
     navigator.geolocation.clearWatch(locationTrackingWatchId);
     locationTrackingWatchId = null;
