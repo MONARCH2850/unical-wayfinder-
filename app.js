@@ -32,7 +32,7 @@ function setNavigationPreference(name, enabled) {
   if (name === 'wheelchair') navigationPreferences.stepFree = enabled || navigationPreferences.stepFree;
   if (name === 'stepFree') navigationPreferences.wheelchair = enabled || navigationPreferences.wheelchair;
   renderPathways();
-  if (selectedPlace) {
+  if (isNavigationActive && selectedPlace) {
     routeLayer.clearLayers();
     calculateRoute(selectedPlace);
   }
@@ -501,14 +501,15 @@ const pathways = [
   { points: [[4.9475,8.3452],[4.9469,8.3460],[4.9482,8.3486]], className: 'quiet-path', stepFree: false }
 ];
 const pathwayLayer = L.layerGroup().addTo(map);
+let isNavigationActive = false;
 function renderPathways() {
   pathwayLayer.clearLayers();
+  if (!isNavigationActive) return;
   pathways.forEach((path) => {
     if (navigationPreferences.stepFree && !path.stepFree) return;
     L.polyline(path.points, { color: path.stepFree ? '#55b779' : '#e47b56', weight: path.className === 'main-path' ? 5 : 3, opacity: .9, dashArray: path.className === 'quiet-path' ? '7 7' : null, lineCap: 'round' }).addTo(pathwayLayer);
   });
 }
-renderPathways();
 const placeList = document.getElementById('placeList');
 const routePanel = document.getElementById('routePanel');
 const destinationInput = document.getElementById('destination');
@@ -522,11 +523,11 @@ const toast = document.getElementById('locationToast');
   input?.addEventListener('change', () => setNavigationPreference(name, input.checked));
 });
 const showToast = (message) => { toast.textContent = message; toast.hidden = false; window.setTimeout(() => { toast.hidden = true; }, 3500); };
-function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; document.querySelectorAll('.place-item').forEach((item) => item.classList.toggle('active', item.dataset.name === place.name)); routeTitle.textContent = place.name; routeMeta.textContent = `${place.type.split(' · ')[0]} · calculating walking route...`; routePanel.hidden = false; routeLayer.clearLayers(); announceForA11y(`Selected destination: ${place.name}`); speakCue(`Route to ${place.name}`); map.flyTo(place.coords, 17, { duration: .7 }); calculateRoute(place); }
+function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; document.querySelectorAll('.place-item').forEach((item) => item.classList.toggle('active', item.dataset.name === place.name)); routeTitle.textContent = place.name; routeMeta.textContent = `${place.type.split(' · ')[0]} · ready to navigate`; routePanel.hidden = false; routeLayer.clearLayers(); announceForA11y(`Selected destination: ${place.name}`); speakCue(`Route to ${place.name}`); map.flyTo(place.coords, 17, { duration: .7 }); }
 places.forEach((place) => { addPlaceButton(place); });
 document.getElementById('placeCount').textContent = `${String(places.length).padStart(2, '0')} PLACES`;
 destinationInput.addEventListener('input', () => { const query = destinationInput.value.toLowerCase().trim(); searchResults.innerHTML = ''; if (!query) return; const matches = places.filter((place) => `${place.name} ${place.type}`.toLowerCase().includes(query)); if (!matches.length) { const result = document.createElement('div'); result.className = 'search-result search-empty'; result.textContent = 'No places found'; searchResults.appendChild(result); return; } matches.forEach((place) => { const result = document.createElement('button'); result.type = 'button'; result.className = 'search-result'; result.textContent = place.name; result.addEventListener('click', () => { destinationInput.value = place.name; searchResults.innerHTML = ''; selectPlace(place); }); searchResults.appendChild(result); }); });
-document.getElementById('clearRoute').addEventListener('click', () => { triggerVibration('tap'); routePanel.hidden = true; routeLayer.clearLayers(); document.querySelectorAll('.place-item').forEach((item) => item.classList.remove('active')); announceForA11y('Route cleared'); speakCue('Route cleared'); map.flyTo(campus, 16); selectedPlace = null; if (navigationWatchId !== null) { navigator.geolocation.clearWatch(navigationWatchId); navigationWatchId = null; } setNavigationButtonState(false); exitWebARView(); });
+document.getElementById('clearRoute').addEventListener('click', () => { triggerVibration('tap'); routePanel.hidden = true; routeLayer.clearLayers(); isNavigationActive = false; renderPathways(); document.querySelectorAll('.place-item').forEach((item) => item.classList.remove('active')); announceForA11y('Route cleared'); speakCue('Route cleared'); map.flyTo(campus, 16); selectedPlace = null; if (navigationWatchId !== null) { navigator.geolocation.clearWatch(navigationWatchId); navigationWatchId = null; } setNavigationButtonState(false); exitWebARView(); });
 const startNavButton = document.getElementById('start-nav-btn') || document.getElementById('startRoute');
 function setNavigationButtonState(isTracking) {
   if (!startNavButton) return;
@@ -542,6 +543,9 @@ function startInAppNavigation(targetLat, targetLng) {
   if (navigationWatchId !== null) {
     navigator.geolocation.clearWatch(navigationWatchId);
     navigationWatchId = null;
+    isNavigationActive = false;
+    renderPathways();
+    routeLayer.clearLayers();
     setNavigationButtonState(false);
     showToast('Navigation stopped.');
     announceForA11y('Navigation stopped');
@@ -555,6 +559,10 @@ function startInAppNavigation(targetLat, targetLng) {
   }
 
   triggerVibration('success');
+  isNavigationActive = true;
+  renderPathways();
+  routeLayer.clearLayers();
+  calculateRoute(selectedPlace);
   setNavigationButtonState(true);
 
   const updateTrackingPosition = (position) => {
