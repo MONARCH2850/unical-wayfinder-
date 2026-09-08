@@ -487,7 +487,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').ca
 window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; document.getElementById('installButton').hidden = false; });
 document.getElementById('installButton').addEventListener('click', async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; document.getElementById('installButton').hidden = true; });
 window.addEventListener('appinstalled', () => { document.getElementById('installButton').hidden = true; });
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+const baseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors',
   bounds: unicalCampusOnlyBounds
 }).addTo(map);
@@ -795,6 +795,11 @@ function renderNavigationSteps(steps = []) {
   });
   stepsElement.hidden = !steps.length;
 }
+function fitRouteOnMap(routePolyline) {
+  if (!map.hasLayer(baseTileLayer)) baseTileLayer.addTo(map);
+  map.invalidateSize({ pan: false });
+  map.fitBounds(routePolyline.getBounds(), { padding: [50, 50], animate: false });
+}
 async function startNavigation(userLat, userLng, destLat, destLng, destName) {
   const origin = [Number(userLat), Number(userLng)];
   const destination = [Number(destLat), Number(destLng)];
@@ -811,7 +816,7 @@ async function startNavigation(userLat, userLng, destLat, destLng, destName) {
       const routePoints = decodeGooglePolyline(googleRoute.overview_polyline || '');
       if (!routePoints.length) throw new Error('Google route geometry unavailable');
       activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
-      map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+      fitRouteOnMap(activeRoutePolyline);
       renderNavigationSteps(googleRoute.steps);
       routeMeta.textContent = `Active navigation · walking to ${destName}`;
       return;
@@ -824,12 +829,12 @@ async function startNavigation(userLat, userLng, destLat, destLng, destName) {
     const routePoints = route.geometry?.coordinates?.map(([longitude, latitude]) => [latitude, longitude]) || route.coordinates;
     if (!routePoints?.length) throw new Error('route unavailable');
     activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
-    map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+    fitRouteOnMap(activeRoutePolyline);
     renderNavigationSteps();
     routeMeta.textContent = `Active navigation · walking to ${destName}`;
   } catch {
     activeRoutePolyline = L.polyline([origin, destination], { color: routeColor, weight: 4, opacity: .9, dashArray: '4, 6', lineCap: 'round' }).addTo(map);
-    map.fitBounds(activeRoutePolyline.getBounds(), { padding: [50, 50] });
+    fitRouteOnMap(activeRoutePolyline);
     renderNavigationSteps();
     routeMeta.textContent = `Active navigation · direct route to ${destName}`;
   }
