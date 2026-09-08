@@ -537,13 +537,22 @@ const pathways = [
 ];
 const pathwayLayer = L.layerGroup().addTo(map);
 let isNavigationActive = false;
+let navigationRouteRequestId = 0;
 function renderPathways() {
   pathwayLayer.clearLayers();
-  if (!isNavigationActive) return;
+  if (isNavigationActive) return;
   pathways.forEach((path) => {
     if (navigationPreferences.stepFree && !path.stepFree) return;
     L.polyline(path.points, { color: path.stepFree ? '#55b779' : '#e47b56', weight: 2.5, opacity: .8, dashArray: path.className === 'quiet-path' ? '4, 6' : null, lineCap: 'round' }).addTo(pathwayLayer);
   });
+}
+function clearRoutePolylines() {
+  if (activeRoutePolyline) {
+    map.removeLayer(activeRoutePolyline);
+    activeRoutePolyline = null;
+  }
+  routeLayer.clearLayers();
+  pathwayLayer.clearLayers();
 }
 const placeList = document.getElementById('placeList');
 const routePanel = document.getElementById('routePanel');
@@ -559,7 +568,7 @@ const toast = document.getElementById('locationToast');
 });
 const hideToast = () => { if (toast) toast.hidden = true; };
 const showToast = (message) => { toast.textContent = message; toast.hidden = false; window.setTimeout(hideToast, 3500); };
-function selectPlace(place) { triggerVibration('tap'); selectedPlace = place; document.querySelectorAll('.place-item').forEach((item) => item.classList.toggle('active', item.dataset.name === place.name)); routeTitle.textContent = place.name; routeMeta.textContent = `${place.type.split(' · ')[0]} · ready to navigate`; routePanel.hidden = false; routeLayer.clearLayers(); announceForA11y(`Selected destination: ${place.name}`); speakCue(`Route to ${place.name}`); map.flyTo(place.coords, 17, { duration: .7 }); }
+function selectPlace(place) { triggerVibration('tap'); navigationRouteRequestId += 1; clearRoutePolylines(); selectedPlace = place; document.querySelectorAll('.place-item').forEach((item) => item.classList.toggle('active', item.dataset.name === place.name)); routeTitle.textContent = place.name; routeMeta.textContent = `${place.type.split(' · ')[0]} · ready to navigate`; routePanel.hidden = false; announceForA11y(`Selected destination: ${place.name}`); speakCue(`Route to ${place.name}`); map.flyTo(place.coords, 17, { duration: .7 }); }
 places.forEach((place) => { addPlaceButton(place); });
 document.getElementById('placeCount').textContent = `${String(places.length).padStart(2, '0')} PLACES`;
 destinationInput.addEventListener('input', () => { const query = destinationInput.value.toLowerCase().trim(); searchResults.innerHTML = ''; if (!query) return; const matches = places.filter((place) => `${place.name} ${place.type}`.toLowerCase().includes(query)); if (!matches.length) { const result = document.createElement('div'); result.className = 'search-result search-empty'; result.textContent = 'No places found'; searchResults.appendChild(result); return; } matches.forEach((place) => { const result = document.createElement('button'); result.type = 'button'; result.className = 'search-result'; result.textContent = place.name; result.addEventListener('click', () => { destinationInput.value = place.name; searchResults.innerHTML = ''; selectPlace(place); }); searchResults.appendChild(result); }); });
@@ -571,11 +580,8 @@ function setNavigationButtonState(isTracking) {
   startNavButton.setAttribute('aria-label', isTracking ? 'Stop navigation to destination' : 'Start navigation to destination');
 }
 function stopNavigation() {
-  if (activeRoutePolyline) {
-    map.removeLayer(activeRoutePolyline);
-    activeRoutePolyline = null;
-  }
-  routeLayer.clearLayers();
+  navigationRouteRequestId += 1;
+  clearRoutePolylines();
   const stepsElement = document.getElementById('navigationSteps');
   if (stepsElement) stepsElement.hidden = true;
   isNavigationActive = false;
@@ -801,13 +807,13 @@ function fitRouteOnMap(routePolyline) {
   map.fitBounds(routePolyline.getBounds(), { padding: [50, 50], animate: false });
 }
 async function startNavigation(userLat, userLng, destLat, destLng, destName) {
+  const requestId = ++navigationRouteRequestId;
   const origin = [Number(userLat), Number(userLng)];
   const destination = [Number(destLat), Number(destLng)];
   const routeColor = '#1B5E20';
   const routeUrl = `https://router.project-osrm.org/route/v1/foot/${origin[1]},${origin[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson`;
 
-  if (activeRoutePolyline) map.removeLayer(activeRoutePolyline);
-  activeRoutePolyline = null;
+  clearRoutePolylines();
   try {
     const apiBase = window.UNICAL_API_BASE?.replace(/\/$/, '');
     let response = apiBase ? await fetch(`${apiBase}/api/google-directions/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start: origin, end: destination }) }) : null;
@@ -815,6 +821,7 @@ async function startNavigation(userLat, userLng, destLat, destLng, destName) {
       const googleRoute = await response.json();
       const routePoints = decodeGooglePolyline(googleRoute.overview_polyline || '');
       if (!routePoints.length) throw new Error('Google route geometry unavailable');
+      if (requestId !== navigationRouteRequestId) return;
       activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
       fitRouteOnMap(activeRoutePolyline);
       renderNavigationSteps(googleRoute.steps);
@@ -828,11 +835,13 @@ async function startNavigation(userLat, userLng, destLat, destLng, destName) {
     const route = data.routes?.[0] || data;
     const routePoints = route.geometry?.coordinates?.map(([longitude, latitude]) => [latitude, longitude]) || route.coordinates;
     if (!routePoints?.length) throw new Error('route unavailable');
+    if (requestId !== navigationRouteRequestId) return;
     activeRoutePolyline = L.polyline(routePoints, { color: routeColor, weight: 4, opacity: .9, lineCap: 'round' }).addTo(map);
     fitRouteOnMap(activeRoutePolyline);
     renderNavigationSteps();
     routeMeta.textContent = `Active navigation · walking to ${destName}`;
   } catch {
+    if (requestId !== navigationRouteRequestId) return;
     activeRoutePolyline = L.polyline([origin, destination], { color: routeColor, weight: 4, opacity: .9, dashArray: '4, 6', lineCap: 'round' }).addTo(map);
     fitRouteOnMap(activeRoutePolyline);
     renderNavigationSteps();
